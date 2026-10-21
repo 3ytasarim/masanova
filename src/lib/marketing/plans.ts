@@ -1,4 +1,4 @@
-import { PLAN_ORDER, PLANS, planHasFeature, type Feature } from "@/config/plans";
+import { PLAN_ORDER, PLANS, planHasFeature, planIncludes, type Feature } from "@/config/plans";
 import type { TenantPlan } from "@prisma/client";
 
 /**
@@ -43,8 +43,9 @@ export type PlanCard = {
 
 const SUMMARY: Record<TenantPlan, string> = {
   STARTER: "Dijital QR menünüzü ve masalarınızı yayına alın.",
+  VOICE_MENU: "Küçük işletmeler için: misafir QR'ı okutur, menüyü sesli asistana sorar. Sipariş yok.",
   PRO: "Masadan siparişten mutfağa, servisten analitiğe tam operasyon.",
-  AI: "Pro'nun tamamı + menünüzü bilen, 5 dilde konuşan sesli asistan.",
+  AI: "Full: Pro'nun tamamı + sesli sipariş alan, 5 dilde konuşan asistan.",
 };
 
 export function includedIn(plan: TenantPlan, key: Feature): boolean {
@@ -53,7 +54,8 @@ export function includedIn(plan: TenantPlan, key: Feature): boolean {
 
 export function planCards(): PlanCard[] {
   return PLAN_ORDER.map((plan, index) => {
-    const previous = index > 0 ? PLAN_ORDER[index - 1]! : null;
+    // "X'in tamamı +" yalnızca bu paketin GERÇEKTEN kapsadığı en yakın önceki paket için (Sesli Menü ⊄ Pro).
+    const previous = [...PLAN_ORDER.slice(0, index)].reverse().find((p) => planIncludes(plan, p)) ?? null;
     const adds = MARKETING_FEATURES.filter((f) => includedIn(plan, f.key) && !(previous && includedIn(previous, f.key))).map((f) => f.label);
     return {
       plan,

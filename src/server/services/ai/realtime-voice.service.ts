@@ -83,6 +83,7 @@ export async function mintRealtimeSession(ctx: TrustedTableContext, input: { pro
   refreshVoiceIndexIfStale(ctx.scope);
   const view = await buildView(ctx, "tr");
   const ordering = ent.has("ordering");
+  const service = ent.has("service_requests");
   const products = view.categories.flatMap((c) => c.products);
   const instructions = buildRealtimeInstructions({
     restaurantName: ctx.tenant.name,
@@ -93,9 +94,10 @@ export async function mintRealtimeSession(ctx: TrustedTableContext, input: { pro
     currency: products[0]?.currency ?? "TRY",
     catalog: menuOverview(flattenMenu(view)),
     ordering,
+    service,
     knowledge: knowledgeIndex(await getActiveKnowledge()),
   });
-  const tools = realtimeToolDefinitions(enabledRealtimeTools(settings, ordering));
+  const tools = realtimeToolDefinitions(enabledRealtimeTools(settings, ordering, service));
   // Tanıma ipucu: ürün adları (yabancı adların Türkçe söylenişi dahil daha iyi tanınır). Kısa tutulur.
   const vocabulary = products.map((p) => p.name).join(", ").slice(0, 800);
   const started = Date.now();
@@ -174,7 +176,7 @@ export async function runRealtimeTool(
   if (!(await rateLimit("ai.tool", conversation.id)).allowed) return { ok: false, error: "rate_limited" };
   const ordering = ent.has("ordering");
   const name = input.name;
-  if (!isRealtimeToolName(name) || !enabledRealtimeTools(settings, ordering).includes(name)) return { ok: true, output: { ok: false, error: "unknown_tool" }, effect: null };
+  if (!isRealtimeToolName(name) || !enabledRealtimeTools(settings, ordering, ent.has("service_requests")).includes(name)) return { ok: true, output: { ok: false, error: "unknown_tool" }, effect: null };
 
   const view = await buildView(ctx, "tr");
   const language: AiLanguage = isAiLanguage(conversation.conversationLanguage) ? conversation.conversationLanguage : "tr";

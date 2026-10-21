@@ -144,7 +144,7 @@ describe("özellik denetim matrisi", () => {
       expect(planHasFeature("AI", f), f).toBe(true);
       expect(planHasFeature("PRO", f), f).toBe(f !== "voice_ai" && f !== "business_advisor");
     }
-    expect(PLAN_ORDER).toEqual(["STARTER", "PRO", "AI"]);
+    expect(PLAN_ORDER).toEqual(["STARTER", "VOICE_MENU", "PRO", "AI"]);
     // Kanonik çözücü dışında paket karşılaştırması yazılmaz
     const offenders: string[] = [];
     const walk = (d: string) => {

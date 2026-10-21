@@ -89,12 +89,12 @@ export function isAiToolName(value: string): value is AiToolName {
   return value in AI_TOOLS;
 }
 
-/** İşletme ayarına göre etkin araçlar (öneri / sepet / servis kapatılabilir). */
-export function enabledTools(settings: { allowRecommendations: boolean; allowCartActions: boolean; allowServiceActions: boolean }): AiToolName[] {
+/** İşletme ayarına ve PAKETE göre etkin araçlar (öneri / sepet / servis kapatılabilir; Sesli Menü paketinde sepet yok). */
+export function enabledTools(settings: { allowRecommendations: boolean; allowCartActions: boolean; allowServiceActions: boolean }, capabilities: { ordering: boolean; service: boolean } = { ordering: true, service: true }): AiToolName[] {
   return AI_TOOL_NAMES.filter((n) => {
     if (n === "getRecommendationCandidates" || n === "getGuidance" || n === "planMealByCalories") return settings.allowRecommendations;
-    if (n === "prepareCartAddition" || n === "prepareCartChange" || n === "openCartReview") return settings.allowCartActions;
-    if (n === "prepareServiceRequest") return settings.allowServiceActions;
+    if (n === "prepareCartAddition" || n === "prepareCartChange" || n === "openCartReview") return settings.allowCartActions && capabilities.ordering;
+    if (n === "prepareServiceRequest") return settings.allowServiceActions && capabilities.service;
     return true;
   });
 }

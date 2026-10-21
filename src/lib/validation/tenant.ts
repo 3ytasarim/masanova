@@ -121,7 +121,7 @@ export const ownerStepSchema = z.discriminatedUnion("passwordMode", [
   }),
 ]);
 
-export const planSchema = z.enum(["STARTER", "PRO", "AI"], { error: "Bir paket seçin." });
+export const planSchema = z.enum(["STARTER", "VOICE_MENU", "PRO", "AI"], { error: "Bir paket seçin." });
 
 export const onboardingSchema = z.object({
   business: businessStepSchema,

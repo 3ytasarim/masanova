@@ -38,7 +38,7 @@ type WizardData = {
   domain: { subdomain: string; customDomain: string };
   owner: { firstName: string; lastName: string; email: string; passwordMode: "generate" | "manual"; password: string };
   branding: { logoUrl: string; primaryColor: string; secondaryColor: string; accentColor: string };
-  plan: "STARTER" | "PRO" | "AI";
+  plan: "STARTER" | "VOICE_MENU" | "PRO" | "AI";
 };
 
 const INITIAL: WizardData = {

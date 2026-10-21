@@ -34,10 +34,10 @@ describe("paket / özellik haritası (tek kaynak)", () => {
   });
   it("pazarlama kartları aynı haritadan; fiyat uydurulmaz; doğrulanmamış online ödeme vaat edilmez", () => {
     const cards = planCards();
-    expect(cards.map((c) => c.plan)).toEqual(["STARTER", "PRO", "AI"]);
+    expect(cards.map((c) => c.plan)).toEqual(["STARTER", "VOICE_MENU", "PRO", "AI"]);
     expect(cards.every((c) => c.priceLabel === "Fiyat için iletişime geçin")).toBe(true);
     expect(JSON.stringify(cards)).not.toMatch(/online ödeme|₺|\$|€/i);
-    expect(cards[2]!.adds).toContain("AI İşletme Danışmanı");
+    expect(cards.find((c) => c.plan === "AI")!.adds).toContain("AI İşletme Danışmanı");
   });
 });
 

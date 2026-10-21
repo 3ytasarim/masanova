@@ -47,6 +47,8 @@ export const FEATURE_LABELS: Record<Feature, string> = {
 };
 
 const STARTER: readonly Feature[] = ["qr_menu", "tables", "qr_labels", "branding"];
+/** Small: menüyü anlatan sesli asistan — sepet / sipariş / servis talebi YOK (asistan yalnızca bilgi verir). */
+const VOICE_MENU: readonly Feature[] = [...STARTER, "voice_ai"];
 const PRO: readonly Feature[] = [
   ...STARTER,
   "ordering",
@@ -89,6 +91,7 @@ const MB = 1024 * 1024;
  */
 const LIMITS: Record<TenantPlan, PlanLimits> = {
   STARTER: { maxBranches: 1, maxTables: 50, maxMenuProducts: 300, maxStaffUsers: 5, maxMediaBytes: 500 * MB, maxMonthlyAiMinutes: 0, maxMonthlyAiReplies: 0, maxMonthlyAdvisorRuns: 0 },
+  VOICE_MENU: { maxBranches: 1, maxTables: 50, maxMenuProducts: 300, maxStaffUsers: 5, maxMediaBytes: 500 * MB, maxMonthlyAiMinutes: 300, maxMonthlyAiReplies: 5000, maxMonthlyAdvisorRuns: 0 },
   PRO: { maxBranches: 5, maxTables: null, maxMenuProducts: null, maxStaffUsers: 50, maxMediaBytes: 5 * 1024 * MB, maxMonthlyAiMinutes: 0, maxMonthlyAiReplies: 0, maxMonthlyAdvisorRuns: 0 },
   AI: { maxBranches: 5, maxTables: null, maxMenuProducts: null, maxStaffUsers: 50, maxMediaBytes: 5 * 1024 * MB, maxMonthlyAiMinutes: 1000, maxMonthlyAiReplies: 20_000, maxMonthlyAdvisorRuns: 300 },
 };
@@ -96,19 +99,29 @@ export const LIMITS_PROVISIONAL = true;
 
 export const PLANS: Record<TenantPlan, { label: string; description: string; features: readonly Feature[]; limits: PlanLimits }> = {
   STARTER: { label: "Starter", description: "Dijital QR menü, masalar ve QR etiketleri.", features: STARTER, limits: LIMITS.STARTER },
+  VOICE_MENU: { label: "Sesli Menü", description: "Small: QR menü + menüyü anlatan sesli AI asistan. Sepet ve sipariş yok; müşteri soru sorar, asistan anlatır.", features: VOICE_MENU, limits: LIMITS.VOICE_MENU },
   PRO: { label: "Pro", description: "Sipariş, mutfak, servis, rezervasyon, CRM, sadakat, kampanya, ödeme ve analitik ile tam operasyon.", features: PRO, limits: LIMITS.PRO },
-  AI: { label: "AI", description: "Pro'nun tamamı + sesli AI asistan ve AI İşletme Danışmanı.", features: AI, limits: LIMITS.AI },
+  AI: { label: "AI", description: "Full: Pro'nun tamamı + sesli sipariş veren AI asistan ve AI İşletme Danışmanı.", features: AI, limits: LIMITS.AI },
 };
 
-export const PLAN_ORDER: readonly TenantPlan[] = ["STARTER", "PRO", "AI"];
+export const PLAN_ORDER: readonly TenantPlan[] = ["STARTER", "VOICE_MENU", "PRO", "AI"];
 
 export function planHasFeature(plan: TenantPlan, feature: Feature): boolean {
   return PLANS[plan].features.includes(feature);
 }
 
-/** Özelliği içeren en düşük paket (kilitli özellik rozeti: "PRO"). */
+/** Yükseltme yolu: her paket bir öncekini kapsar. Sesli Menü (Small) YAN pakettir (sipariş yok) — yükseltme önerisi olmaz. */
+export const UPGRADE_LADDER: readonly TenantPlan[] = ["STARTER", "PRO", "AI"];
+
+/** Özelliği içeren en düşük YÜKSELTME paketi (kilitli özellik rozeti: "PRO"). Pro'daki firmaya sesli AI için "AI" önerilir
+ *  (Sesli Menü'ye geçmek siparişi kaybettirir). */
 export function minimumPlanFor(feature: Feature): TenantPlan {
-  return PLAN_ORDER.find((p) => planHasFeature(p, feature)) ?? "AI";
+  return UPGRADE_LADDER.find((p) => planHasFeature(p, feature)) ?? "AI";
+}
+
+/** a paketinin tüm özellikleri b'de var mı? (paket kartlarında "X'in tamamı +" yalnızca gerçekten kapsıyorsa) */
+export function planIncludes(b: TenantPlan, a: TenantPlan): boolean {
+  return PLANS[a].features.every((f) => planHasFeature(b, f));
 }
 
 export const isFeature = (v: string): v is Feature => (FEATURES as readonly string[]).includes(v);

@@ -76,7 +76,9 @@ describe("paket sunumu (config/plans tablosundan türetilir)", () => {
   });
 
   it("her özellik, tablonun onu İLK içerdiği pakette listelenir (elle yazılmış eşleme yok)", () => {
-    const [starter, pro, ai] = cards;
+    const [starter, voice, pro, ai] = cards;
+    expect(voice!.adds).toEqual(["Sesli AI asistan (5 dilde konuşma)"]);
+    expect(voice!.includesPrevious).toBe("Starter");
     expect(starter!.adds).toEqual(["QR menü", "Masa & güvenli QR yönetimi", "Baskıya hazır QR etiketleri", "Tema ve marka renkleri"]);
     expect(pro!.adds).toEqual(["Masadan sipariş", "Mutfak ekranı ve istasyonlar", "Garson çağrısı ve servis talepleri", "Online rezervasyon", "Müşteriler, sadakat ve kuponlar", "Analitik paneli"]);
     expect(ai!.adds).toEqual(["Sesli AI asistan (5 dilde konuşma)", "AI İşletme Danışmanı"]);

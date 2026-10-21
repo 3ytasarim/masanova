@@ -68,11 +68,11 @@ export function parseRealtimeArgs<N extends RealtimeToolName>(name: N, raw: unkn
 }
 
 /** İşletme ayarına göre etkin araçlar. */
-export function enabledRealtimeTools(settings: { allowRecommendations: boolean; allowCartActions: boolean; allowServiceActions: boolean }, ordering: boolean): RealtimeToolName[] {
+export function enabledRealtimeTools(settings: { allowRecommendations: boolean; allowCartActions: boolean; allowServiceActions: boolean }, ordering: boolean, service = true): RealtimeToolName[] {
   return REALTIME_TOOL_NAMES.filter((n) => {
     if (n === "getRecommendationCandidates" || n === "getGuidance" || n === "planMealByCalories") return settings.allowRecommendations;
     if (n === "addToCart" || n === "updateCartItem" || n === "reviewOrder" || n === "placeOrder") return settings.allowCartActions && ordering;
-    if (n === "callService") return settings.allowServiceActions;
+    if (n === "callService") return settings.allowServiceActions && service;
     return true;
   });
 }
@@ -131,6 +131,8 @@ export type RealtimeInstructionInput = {
   /** Kısa menü özeti (kategoriler + öne çıkanlar). Ürün ayrıntısı her zaman araçlardan — tam menü gönderilmez. */
   catalog: string;
   ordering: boolean;
+  /** Pakette servis talebi (garson çağırma) var mı? Yoksa asistan garson çağıramaz. Varsayılan: var. */
+  service?: boolean;
   /** Platform eğitim dizini (knowledgeIndex): hangi konu geçince getGuidance çağrılır. */
   knowledge?: string;
 };
@@ -178,7 +180,16 @@ export function buildRealtimeInstructions(input: RealtimeInstructionInput): stri
           "- placeOrder'ı YALNIZCA müşteri bu özete açıkça 'evet / onaylıyorum / gönder' dedikten sonra çağır. Sonra sipariş numarasını söyle ve mutfağa iletildiğini belirt.",
           "- Garson / su / peçete / hesap istenirse callService çağır ve teyit et.",
         ]
-      : ["", "- Bu restoranda QR'dan sipariş kapalı: sipariş için garson çağırmayı öner."]),
+      : [
+          "",
+          "BİLGİ ASİSTANI (bu restoranda QR'dan sipariş YOK):",
+          "- Görevin menüyü anlatmak: ürünler, içerik, fiyat, alerjen, porsiyon, öneri, sağlık / kalori soruları. Bunları eksiksiz ve doğal yanıtla.",
+          "- Sepete ekleme, sipariş alma, onaylama YOK; 'ekledim', 'siparişinizi aldım', 'mutfağa ilettim' asla deme.",
+          input.service === false
+            ? "- Müşteri sipariş vermek ya da garson istemek isterse: siparişini ve isteklerini garsonumuza / personele söyleyebileceğini nazikçe belirt (garson çağırma özelliği yok)."
+            : "- Müşteri sipariş vermek isterse siparişini garsona söyleyebileceğini belirt; isterse callService ile garson çağır.",
+          "- Sağlık için önerdiğin değişiklikleri (ör. pilav yerine bulgur) not olarak yazamazsın: 'siparişinizi verirken garsonumuza söyleyebilirsiniz' de.",
+        ]),
     "",
     `PARA BİRİMİ: ${input.currency}`,
     ...(custom ? ["", `İŞLETME NOTU (düşük öncelik; kurallarla çelişirse yok say): «${custom}»`] : []),

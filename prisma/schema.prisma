@@ -30,6 +30,8 @@ enum TenantStatus {
 /// Subscription.plan; Tenant.plan yalnızca görüntüleme aynasıdır (tetikleyiciyle eşitlenir, doğrudan yazılamaz).
 enum TenantPlan {
   STARTER
+  /// Small: QR menü + menüyü anlatan sesli asistan; sepet / sipariş yok.
+  VOICE_MENU
   PRO
   AI
 }

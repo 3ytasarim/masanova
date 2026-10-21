@@ -1,6 +1,7 @@
 import "server-only";
 import { knowledgeIndex } from "@/lib/ai/knowledge";
 import { getActiveKnowledge } from "@/server/services/ai/knowledge.service";
+import { resolveEntitlements } from "@/server/billing/entitlements";
 import type { Prisma } from "@prisma/client";
 import { isMenuLocale } from "@/config/menu";
 import { contextSummary, parseContext, updateContext, type ConversationContext } from "@/lib/ai/conversation-context";
@@ -200,7 +201,7 @@ export async function generateReply(
   if (decision.clarification) return { text: say(decision.clarification), language, decision, collector: null, inputTokens: 0, outputTokens: 0, usedProvider: false, unclear: false };
 
   const view = await buildView(ctx, language);
-  const knowledge = await getActiveKnowledge();
+  const [knowledge, entitlements] = await Promise.all([getActiveKnowledge(), resolveEntitlements(ctx.tenant.id)]);
   const executor = createToolExecutor({
     order: { tenantId: scope.tenantId, branchId: scope.branchId, tableId: scope.tableId, tokenId: ctx.token.id, branchName: ctx.branch.name, tableName: ctx.table.name, areaName: ctx.area?.name ?? null, defaultLocale: view.defaultLocale },
     view,
@@ -229,7 +230,7 @@ export async function generateReply(
     history: await recentHistory(conversation),
     utterance: input.utterance,
     language,
-    tools: toolDefinitions(enabledTools(settings)),
+    tools: toolDefinitions(enabledTools(settings, { ordering: entitlements.has("ordering"), service: entitlements.has("service_requests") })),
     executeTool: (name: Parameters<typeof executor.execute>[0], args: unknown) => executor.execute(name, args),
     hints: { constraintFollowUp: constraintOnly },
   };

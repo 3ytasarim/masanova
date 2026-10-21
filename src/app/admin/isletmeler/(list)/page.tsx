@@ -33,7 +33,7 @@ export default async function TenantsPage({ searchParams }: { searchParams: Prom
   const params = await searchParams;
   const q = param(params, "q", 120);
   const status = enumParam(params, "durum", ["TRIAL", "ACTIVE", "SUSPENDED", "CANCELLED"] as const);
-  const plan = enumParam(params, "paket", ["STARTER", "PRO", "AI"] as const);
+  const plan = enumParam(params, "paket", ["STARTER", "VOICE_MENU", "PRO", "AI"] as const);
   const sort = enumParam(params, "sirala", TENANT_SORTS) ?? "created_desc";
   const page = pageParam(params);
 
