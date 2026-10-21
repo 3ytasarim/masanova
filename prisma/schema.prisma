@@ -1,0 +1,2714 @@
+// MasaNova AI — veri modeli
+//
+// Çok kiracılı (multi-tenant) mimari: kiracıya ait HER kayıt `tenantId` taşır ve yalnızca
+// `src/server/repositories` altındaki kapsamlı (TenantScope alan) fonksiyonlar üzerinden okunur/yazılır.
+// Ayrıntı: docs/architecture.md
+//
+// Generator bilinçli olarak klasik "prisma-client-js": yeni "prisma-client" (ESM) generator'ı
+// Next.js sunucu paketlemesiyle çakışabiliyor. Prisma 6.x'e sabitlendi (datasource directUrl desteği).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─── Enum'lar ────────────────────────────────────────────────────────────────
+
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+/// Ürün paketi. Özellik / limit eşlemesi kodda (src/config/plans.ts). Sprint 20: abone olunan paketin TEK kaynağı
+/// Subscription.plan; Tenant.plan yalnızca görüntüleme aynasıdır (tetikleyiciyle eşitlenir, doğrudan yazılamaz).
+enum TenantPlan {
+  STARTER
+  PRO
+  AI
+}
+
+enum DomainVerificationStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum DemoRequestStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  WON
+  LOST
+}
+
+enum DomainType {
+  SUBDOMAIN
+  CUSTOM_DOMAIN
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  TENANT_OWNER
+  BRANCH_MANAGER
+  WAITER
+  CASHIER
+  KITCHEN
+  BAR
+}
+
+// ─── Kiracı ──────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id        String       @id @default(cuid())
+  name      String
+  /// URL-güvenli, küçük harf, benzersiz kimlik (ör. "demo-restoran").
+  slug      String       @unique
+  status    TenantStatus @default(TRIAL)
+  plan      TenantPlan   @default(STARTER)
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  domains             TenantDomain[]
+  branches            Branch[]
+  users               User[]
+  settings            TenantSettings?
+  publicMenuSettings  PublicMenuSettings?
+  orders              Order[]
+  orderItems          OrderItem[]
+  orderItemModifiers  OrderItemModifier[]
+  orderStatusHistory  OrderStatusHistory[]
+  orderSequences      OrderSequence[]
+  preparationStations PreparationStation[]
+  productStations     ProductPreparationStation[]
+  orderTickets        OrderTicket[]
+  orderTicketItems    OrderTicketItem[]
+
+  menuCategories             MenuCategory[]
+  menuCategoryTranslations   MenuCategoryTranslation[]
+  products                   Product[]
+  productTranslations        ProductTranslation[]
+  productImages              ProductImage[]
+  mediaAssets                MediaAsset[]
+  productVariants            ProductVariant[]
+  productVariantTranslations ProductVariantTranslation[]
+  modifierGroups             ModifierGroup[]
+  modifierGroupTranslations  ModifierGroupTranslation[]
+  modifiers                  Modifier[]
+  modifierTranslations       ModifierTranslation[]
+  productModifierGroups      ProductModifierGroup[]
+  ingredients                Ingredient[]
+  ingredientTranslations     IngredientTranslation[]
+  productIngredients         ProductIngredient[]
+  allergens                  Allergen[]
+  allergenTranslations       AllergenTranslation[]
+  productAllergens           ProductAllergen[]
+  dietaryTags                DietaryTag[]
+  dietaryTagTranslations     DietaryTagTranslation[]
+  productDietaryTags         ProductDietaryTag[]
+  branchProducts             BranchProduct[]
+  branchVariantPrices        BranchVariantPrice[]
+
+  diningAreas  DiningArea[]
+  diningTables DiningTable[]
+  qrTokens     TableQrToken[]
+
+  serviceRequests       TableServiceRequest[]
+  serviceRequestHistory TableServiceRequestStatusHistory[]
+
+  voiceMenuIndex           VoiceMenuIndex?
+  aiSettings               AiSettings?
+  aiConversations          AiConversation[]
+  aiMessages               AiMessage[]
+  aiUsage                  AiUsage[]
+  advisorInsights          AdvisorInsight[]
+  customers                Customer[]
+  customerVerifiedContacts CustomerVerifiedContact[]
+  customerConsents         CustomerConsent[]
+  customerSessions         CustomerSession[]
+  contactVerifications     ContactVerification[]
+  loyaltySettings          LoyaltySettings?
+  loyaltyAccounts          LoyaltyAccount[]
+  loyaltyLedger            LoyaltyLedger[]
+
+  aiTurns AiTurn[]
+
+  reservationSettings    ReservationSettings?
+  branchOpeningHours     BranchOpeningHours[]
+  reservationBlackouts   ReservationBlackout[]
+  tableCombinations      TableCombination[]
+  tableCombinationTables TableCombinationTable[]
+  reservations           Reservation[]
+  reservationTables      ReservationTable[]
+  reservationHistory     ReservationStatusHistory[]
+
+  coupons           Coupon[]
+  couponProducts    CouponProduct[]
+  couponCategories  CouponCategory[]
+  couponRedemptions CouponRedemption[]
+  loyaltyRewards    LoyaltyReward[]
+  orderPromotions   OrderPromotion[]
+  campaigns         Campaign[]
+
+  paymentSettings      PaymentSettings?
+  payments             Payment[]
+  paymentAttempts      PaymentAttempt[]
+  paymentAllocations   PaymentAllocation[]
+  paymentRefunds       PaymentRefund[]
+  paymentWebhookEvents PaymentWebhookEvent[]
+  subscription         Subscription?
+  subscriptionEvents   SubscriptionEvent[]
+  entitlementOverrides EntitlementOverride[]
+
+  @@index([status])
+  @@index([plan])
+  @@index([createdAt])
+  @@map("tenants")
+}
+
+/// Kiracıya bağlanan ana bilgisayar adları. Hem platform alt alan adları (demo.masanovai.com)
+/// hem de müşterinin kendi alan adı (menu.restoran.com) burada tam hostname olarak tutulur.
+model TenantDomain {
+  id        String     @id @default(cuid())
+  tenantId  String     @map("tenant_id")
+  /// Normalize edilmiş (küçük harf, portsuz, sonda nokta yok) tam hostname.
+  hostname  String     @unique
+  type      DomainType
+  /// CUSTOM_DOMAIN kayıtları DNS doğrulaması tamamlanana kadar çözümlenmez. YALNIZCA doğrulama servisi
+  /// (gerçek DNS TXT kontrolü) true yapar; çözümleyicinin okuduğu tek alan budur.
+  verified  Boolean    @default(false)
+  isPrimary Boolean    @default(false) @map("is_primary")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  verification DomainVerification?
+
+  @@index([tenantId])
+  @@map("tenant_domains")
+}
+
+/// Özel alan adı sahiplik doğrulaması (DNS TXT challenge):
+///   _masanova-verification.<hostname>  TXT  "masanova-verification=<token>"
+/// Token gizli bir kimlik bilgisi DEĞİLDİR (DNS'te herkese açık yayınlanır); yalnızca alan adı sahibinin DNS'e
+/// yazabildiğini kanıtlar. Yine de loglara yazılmaz. Token yenilenirse eski kayıt geçersizleşir.
+model DomainVerification {
+  id            String                   @id @default(cuid())
+  domainId      String                   @unique @map("domain_id")
+  token         String
+  status        DomainVerificationStatus @default(PENDING)
+  /// Son başarısız kontrolün nedeni (ör. TXT_NOT_FOUND, TXT_MISMATCH, DNS_ERROR).
+  failureReason String?                  @map("failure_reason")
+  attempts      Int                      @default(0)
+  lastCheckedAt DateTime?                @map("last_checked_at")
+  verifiedAt    DateTime?                @map("verified_at")
+  createdAt     DateTime                 @default(now()) @map("created_at")
+  updatedAt     DateTime                 @updatedAt @map("updated_at")
+
+  domain TenantDomain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("domain_verifications")
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  slug      String
+  phone     String?
+  email     String?
+  address   String?
+  city      String?
+  district  String?
+  /// ISO 3166-1 alpha-2
+  country   String   @default("TR")
+  /// IANA saat dilimi
+  timezone  String   @default("Europe/Istanbul")
+  /// ISO 4217
+  currency  String   @default("TRY")
+  /// BCP 47
+  locale    String   @default("tr")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  productOverrides       BranchProduct[]
+  variantPrices          BranchVariantPrice[]
+  diningAreas            DiningArea[]
+  diningTables           DiningTable[]
+  orders                 Order[]
+  orderSequences         OrderSequence[]
+  stations               PreparationStation[] @relation("BranchStations")
+  /// Şubenin varsayılan hazırlama istasyonu (ataması olmayan ürünler buraya düşer). Tek kolon → en fazla bir varsayılan.
+  defaultStationId       String?              @map("default_station_id")
+  /// Varsayılan istasyonun şubesi — CHECK ile her zaman bu satırın kendi id değerine eşit (ya da ikisi birden NULL).
+  /// Bileşik FK bu kolon üzerinden kurulur; böylece branches.id ilişki skaleri olmaz (Prisma checked create güvenli).
+  defaultStationBranchId String?              @map("default_station_branch_id")
+  defaultStation         PreparationStation?  @relation("BranchDefaultStation", fields: [defaultStationId, defaultStationBranchId, tenantId], references: [id, branchId, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  serviceRequests TableServiceRequest[]
+
+  aiConversations AiConversation[]
+  advisorInsights AdvisorInsight[]
+
+  openingHours         BranchOpeningHours[]
+  reservationBlackouts ReservationBlackout[]
+  tableCombinations    TableCombination[]
+  reservations         Reservation[]
+
+  coupons Coupon[]
+
+  payments Payment[]
+
+  @@unique([tenantId, slug])
+  /// Bileşik FK hedefi: şube geçersiz kılmaları yalnızca aynı kiracının şubesine bağlanabilir.
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@map("branches")
+}
+
+// ─── Kullanıcı & oturum ──────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  /// SUPER_ADMIN kullanıcılarında null; diğer tüm rollerde zorunlu (uygulama katmanında doğrulanır).
+  tenantId     String?  @map("tenant_id")
+  /// Küçük harfe normalize edilmiş e-posta. Şimdilik platform genelinde benzersiz.
+  email        String   @unique
+  /// argon2id hash. Harici kimlik sağlayıcı (OAuth / magic link) eklendiğinde null olabilir.
+  passwordHash String?  @map("password_hash")
+  /// Harici kimlik sağlayıcı referansı (ör. "google:1234"). Şimdilik kullanılmıyor.
+  authProvider String?  @map("auth_provider")
+  firstName    String   @map("first_name")
+  lastName     String   @map("last_name")
+  role         UserRole
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  sessions Session[]
+
+  @@index([tenantId])
+  @@index([tenantId, role])
+  @@map("users")
+}
+
+/// Sunucu tarafı oturum. Çerezde yalnızca rastgele token durur; veritabanında SHA-256 özeti saklanır,
+/// böylece veritabanı sızıntısı tek başına oturum ele geçirmeye yetmez ve oturumlar anında iptal edilebilir.
+model Session {
+  id               String    @id @default(cuid())
+  userId           String    @map("user_id")
+  tokenHash        String    @unique @map("token_hash")
+  expiresAt        DateTime  @map("expires_at")
+  ipAddress        String?   @map("ip_address")
+  userAgent        String?   @map("user_agent")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  lastSeenAt       DateTime  @default(now()) @map("last_seen_at")
+  /// Destek modu: SUPER_ADMIN bu kiracının panelini inceliyor. Oturumun kendisi (admin kimliği) korunur.
+  supportTenantId  String?   @map("support_tenant_id")
+  supportStartedAt DateTime? @map("support_started_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// ─── Kiracı ayarları ─────────────────────────────────────────────────────────
+
+model TenantSettings {
+  id              String   @id @default(cuid())
+  tenantId        String   @unique @map("tenant_id")
+  logoUrl         String?  @map("logo_url")
+  /// Yüklenen logo (öncelikli); boşsa logoUrl.
+  logoAssetId     String?  @map("logo_asset_id")
+  faviconUrl      String?  @map("favicon_url")
+  primaryColor    String?  @map("primary_color")
+  secondaryColor  String?  @map("secondary_color")
+  accentColor     String?  @map("accent_color")
+  fontFamily      String?  @map("font_family")
+  defaultLocale   String   @default("tr") @map("default_locale")
+  defaultCurrency String   @default("TRY") @map("default_currency")
+  timezone        String   @default("Europe/Istanbul")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  logoAsset MediaAsset? @relation("LogoAsset", fields: [logoAssetId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("tenant_settings")
+}
+
+// ─── Denetim ─────────────────────────────────────────────────────────────────
+
+/// Yalnızca eklenen (append-only) denetim kaydı. Bilinçli olarak foreign key YOK:
+/// kullanıcı/kiracı silinse ya da değişse bile iz bozulmadan kalmalı.
+model AuditLog {
+  id        String   @id @default(cuid())
+  tenantId  String?  @map("tenant_id")
+  userId    String?  @map("user_id")
+  /// Nokta ayrımlı eylem adı, ör. "auth.login.success", "branch.update".
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  metadata  Json?
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt])
+  @@index([createdAt])
+  @@index([userId])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+// ─── Satış ───────────────────────────────────────────────────────────────────
+
+/// Landing sayfasındaki demo talep formu. CRM / e-posta entegrasyonu sonraki sprintlerde.
+model DemoRequest {
+  id           String            @id @default(cuid())
+  name         String
+  businessName String            @map("business_name")
+  phone        String
+  email        String
+  city         String?
+  tableCount   Int?              @map("table_count")
+  message      String?
+  status       DemoRequestStatus @default(NEW)
+  /// Super Admin iç notları (müşteriye gösterilmez).
+  notes        String?
+  ipAddress    String?           @map("ip_address")
+  userAgent    String?           @map("user_agent")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@map("demo_requests")
+}
+
+// ─── Menü (Sprint 3) ─────────────────────────────────────────────────────────
+//
+// Kiracı izolasyonu veritabanı düzeyinde de zorunlu: kiracıya ait alt kayıtlar üst kayda BİLEŞİK yabancı
+// anahtarla bağlanır — (productId, tenantId) → Product(id, tenantId). Böylece A kiracısının ürününe B'nin
+// ekstra grubu / malzemesi / şubesi, uygulama katmanı atlansa bile bağlanamaz.
+//
+// Para: tamsayı alt birim (kuruş). Ör. 89,90 TRY = 8990. Kayan nokta kullanılmaz.
+// Silme: ürün, varyant, ekstra grubu ve ekstra fiziksel silinmez; `archivedAt` ile arşivlenir (gelecekteki
+// siparişler tarihsel olarak geçerli kalsın diye).
+// Çeviri: ana satır kiracının varsayılan dilindeki kanonik içeriktir; diğer diller *Translation tablolarında.
+
+model MenuCategory {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  /// Tek seviye iç içe: üst kategorinin kendisi alt kategori olamaz (servis katmanında doğrulanır).
+  parentId     String?  @map("parent_id")
+  name         String
+  slug         String
+  description  String?
+  imageUrl     String?  @map("image_url")
+  /// Yüklenen banner (öncelikli); boşsa imageUrl (harici, geriye uyumlu).
+  imageAssetId String?  @map("image_asset_id")
+  active       Boolean  @default(true)
+  featured     Boolean  @default(false)
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent       MenuCategory?             @relation("MenuCategoryTree", fields: [parentId], references: [id], onDelete: NoAction)
+  children     MenuCategory[]            @relation("MenuCategoryTree")
+  products     Product[]
+  translations MenuCategoryTranslation[]
+  imageAsset   MediaAsset?               @relation("CategoryImageAsset", fields: [imageAssetId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  couponScopes CouponCategory[]
+
+  @@unique([tenantId, slug])
+  @@unique([id, tenantId])
+  @@index([tenantId, parentId, sortOrder])
+  @@map("menu_categories")
+}
+
+model MenuCategoryTranslation {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  categoryId  String   @map("category_id")
+  locale      String
+  name        String
+  description String?
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category MenuCategory @relation(fields: [categoryId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([categoryId, locale])
+  @@index([tenantId])
+  @@map("menu_category_translations")
+}
+
+model Product {
+  id                   String    @id @default(cuid())
+  tenantId             String    @map("tenant_id")
+  categoryId           String    @map("category_id")
+  name                 String
+  slug                 String
+  shortDescription     String?   @map("short_description")
+  description          String?
+  sku                  String?
+  /// Kuruş (alt birim). Varyantı olmayan ürünün fiyatı; varyantların fiyatsızsa miras aldığı taban fiyat.
+  basePriceMinor       Int       @map("base_price_minor")
+  /// ISO 4217. Şube / varyant fiyatları da bu para birimindedir.
+  currency             String    @default("TRY")
+  active               Boolean   @default(true)
+  featured             Boolean   @default(false)
+  soldOut              Boolean   @default(false) @map("sold_out")
+  preparationMinutes   Int?      @map("preparation_minutes")
+  /// Besin değerleri işletme beyanıdır (porsiyon başına; kcal ve tam gram).
+  calories             Int?
+  proteinGrams         Int?      @map("protein_grams")
+  carbohydrateGrams    Int?      @map("carbohydrate_grams")
+  fatGrams             Int?      @map("fat_grams")
+  /// İşletme alerjen bilgisini girdiğini onayladığında dolar ("alerjen yok" ile "girilmedi" ayrımı).
+  allergensConfirmedAt DateTime? @map("allergens_confirmed_at")
+  sortOrder            Int       @default(0) @map("sort_order")
+  archivedAt           DateTime? @map("archived_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category        MenuCategory           @relation(fields: [categoryId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  translations    ProductTranslation[]
+  images          ProductImage[]
+  variants        ProductVariant[]
+  modifierGroups  ProductModifierGroup[]
+  ingredients     ProductIngredient[]
+  allergens       ProductAllergen[]
+  dietaryTags     ProductDietaryTag[]
+  branchOverrides BranchProduct[]
+
+  orderItems OrderItem[]
+
+  stationRoutes ProductPreparationStation[]
+
+  couponScopes    CouponProduct[]
+  freeItemCoupons Coupon[]        @relation("CouponFreeProduct")
+  freeItemRewards LoyaltyReward[] @relation("RewardFreeProduct")
+
+  @@unique([tenantId, slug])
+  @@unique([id, tenantId])
+  @@index([tenantId, categoryId, sortOrder])
+  @@index([tenantId, archivedAt, updatedAt])
+  @@map("products")
+}
+
+model ProductTranslation {
+  id               String   @id @default(cuid())
+  tenantId         String   @map("tenant_id")
+  productId        String   @map("product_id")
+  locale           String
+  name             String
+  shortDescription String?  @map("short_description")
+  description      String?
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([productId, locale])
+  @@index([tenantId])
+  @@map("product_translations")
+}
+
+/// Görsel referansı. Görsel verisi veritabanına YAZILMAZ: `storageProvider` + `storageKey` ile çözülür
+/// ("external" → https URL; ileride "hetzner" → nesne anahtarı). Bkz. src/lib/storage.
+model ProductImage {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  productId       String   @map("product_id")
+  storageProvider String   @default("external") @map("storage_provider")
+  storageKey      String   @map("storage_key")
+  /// Yüklenen (yönetilen) görsel; doluysa storageProvider = "media" ve storageKey = MediaAsset.id. Boşsa harici URL.
+  mediaAssetId    String?  @map("media_asset_id")
+  altText         String?  @map("alt_text")
+  isPrimary       Boolean  @default(false) @map("is_primary")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product    Product     @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  mediaAsset MediaAsset? @relation("ProductImageAsset", fields: [mediaAssetId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([productId, sortOrder])
+  @@index([tenantId])
+  @@index([mediaAssetId])
+  @@map("product_images")
+}
+
+model ProductVariant {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  productId  String    @map("product_id")
+  name       String
+  sku        String?
+  /// Kuruş. null → ürünün (şube) taban fiyatını miras alır.
+  priceMinor Int?      @map("price_minor")
+  active     Boolean   @default(true)
+  isDefault  Boolean   @default(false) @map("is_default")
+  sortOrder  Int       @default(0) @map("sort_order")
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  tenant       Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product      Product                     @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  translations ProductVariantTranslation[]
+  branchPrices BranchVariantPrice[]
+
+  orderItems OrderItem[]
+
+  @@unique([productId, name])
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@map("product_variants")
+}
+
+model ProductVariantTranslation {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  variantId String   @map("variant_id")
+  locale    String
+  name      String
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([variantId, locale])
+  @@index([tenantId])
+  @@map("product_variant_translations")
+}
+
+/// Yeniden kullanılabilir ekstra/seçenek grubu (ör. "Pişirme Derecesi", "İçecek Seçimi").
+model ModifierGroup {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  name       String
+  /// required=true ⇔ minSelect ≥ 1; maxSelect ≥ minSelect (servis + Zod doğrular).
+  required   Boolean   @default(false)
+  minSelect  Int       @default(0) @map("min_select")
+  maxSelect  Int       @default(1) @map("max_select")
+  sortOrder  Int       @default(0) @map("sort_order")
+  active     Boolean   @default(true)
+  archivedAt DateTime? @map("archived_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  tenant       Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  modifiers    Modifier[]
+  translations ModifierGroupTranslation[]
+  products     ProductModifierGroup[]
+
+  orderItemModifiers OrderItemModifier[]
+
+  @@unique([tenantId, name])
+  @@unique([id, tenantId])
+  @@map("modifier_groups")
+}
+
+model ModifierGroupTranslation {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  modifierGroupId String   @map("modifier_group_id")
+  locale          String
+  name            String
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  group  ModifierGroup @relation(fields: [modifierGroupId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([modifierGroupId, locale])
+  @@index([tenantId])
+  @@map("modifier_group_translations")
+}
+
+model Modifier {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  modifierGroupId String    @map("modifier_group_id")
+  name            String
+  /// Kuruş, ≥ 0 (negatif fiyat farkı bu sürümde desteklenmez).
+  priceDeltaMinor Int       @default(0) @map("price_delta_minor")
+  active          Boolean   @default(true)
+  sortOrder       Int       @default(0) @map("sort_order")
+  archivedAt      DateTime? @map("archived_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  tenant       Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  group        ModifierGroup         @relation(fields: [modifierGroupId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  translations ModifierTranslation[]
+
+  orderItemModifiers OrderItemModifier[]
+
+  @@unique([modifierGroupId, name])
+  @@unique([id, tenantId])
+  @@index([tenantId])
+  @@map("modifiers")
+}
+
+model ModifierTranslation {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  modifierId String   @map("modifier_id")
+  locale     String
+  name       String
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  modifier Modifier @relation(fields: [modifierId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([modifierId, locale])
+  @@index([tenantId])
+  @@map("modifier_translations")
+}
+
+model ProductModifierGroup {
+  id              String @id @default(cuid())
+  tenantId        String @map("tenant_id")
+  productId       String @map("product_id")
+  modifierGroupId String @map("modifier_group_id")
+  sortOrder       Int    @default(0) @map("sort_order")
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product       @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  group   ModifierGroup @relation(fields: [modifierGroupId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([productId, modifierGroupId])
+  @@index([tenantId])
+  @@index([modifierGroupId])
+  @@map("product_modifier_groups")
+}
+
+/// Müşteriye/menüye/AI'a yönelik malzeme bilgisi (tedarik / reçete maliyeti DEĞİL).
+model Ingredient {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  translations IngredientTranslation[]
+  products     ProductIngredient[]
+
+  @@unique([tenantId, name])
+  @@unique([id, tenantId])
+  @@map("ingredients")
+}
+
+model IngredientTranslation {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  ingredientId String   @map("ingredient_id")
+  locale       String
+  name         String
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([ingredientId, locale])
+  @@index([tenantId])
+  @@map("ingredient_translations")
+}
+
+model ProductIngredient {
+  tenantId     String @map("tenant_id")
+  productId    String @map("product_id")
+  ingredientId String @map("ingredient_id")
+  sortOrder    Int    @default(0) @map("sort_order")
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  ingredient Ingredient @relation(fields: [ingredientId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@id([productId, ingredientId])
+  @@index([tenantId])
+  @@map("product_ingredients")
+}
+
+/// Alerjen. tenantId null → platform standart alerjeni (AB/Türkiye 14 alerjen; migration ile gelir, salt okunur).
+/// tenantId dolu → işletmenin kendi tanımladığı alerjen. Görünen ad her zaman çeviri kaydından okunur;
+/// `name` yalnızca kanonik yedek addır.
+model Allergen {
+  id        String   @id @default(cuid())
+  tenantId  String?  @map("tenant_id")
+  code      String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant?               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  translations AllergenTranslation[]
+  products     ProductAllergen[]
+
+  @@unique([tenantId, code])
+  @@map("allergens")
+}
+
+model AllergenTranslation {
+  id         String   @id @default(cuid())
+  tenantId   String?  @map("tenant_id")
+  allergenId String   @map("allergen_id")
+  locale     String
+  name       String
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  allergen Allergen @relation(fields: [allergenId], references: [id], onDelete: Cascade)
+
+  @@unique([allergenId, locale])
+  @@map("allergen_translations")
+}
+
+model ProductAllergen {
+  tenantId   String @map("tenant_id")
+  productId  String @map("product_id")
+  allergenId String @map("allergen_id")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  allergen Allergen @relation(fields: [allergenId], references: [id], onDelete: Cascade)
+
+  @@id([productId, allergenId])
+  @@index([tenantId])
+  @@index([allergenId])
+  @@map("product_allergens")
+}
+
+/// Diyet / menü etiketi (Vegan, Helal, Acılı, Şefin önerisi…). tenantId null → platform standardı.
+/// Etiketler YALNIZCA işletme tarafından açıkça atanır; sistem asla çıkarım yapmaz veya sertifika iddia etmez.
+model DietaryTag {
+  id        String   @id @default(cuid())
+  tenantId  String?  @map("tenant_id")
+  code      String
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant?                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  translations DietaryTagTranslation[]
+  products     ProductDietaryTag[]
+
+  @@unique([tenantId, code])
+  @@map("dietary_tags")
+}
+
+model DietaryTagTranslation {
+  id           String   @id @default(cuid())
+  tenantId     String?  @map("tenant_id")
+  dietaryTagId String   @map("dietary_tag_id")
+  locale       String
+  name         String
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant     Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dietaryTag DietaryTag @relation(fields: [dietaryTagId], references: [id], onDelete: Cascade)
+
+  @@unique([dietaryTagId, locale])
+  @@map("dietary_tag_translations")
+}
+
+model ProductDietaryTag {
+  tenantId     String @map("tenant_id")
+  productId    String @map("product_id")
+  dietaryTagId String @map("dietary_tag_id")
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  dietaryTag DietaryTag @relation(fields: [dietaryTagId], references: [id], onDelete: Cascade)
+
+  @@id([productId, dietaryTagId])
+  @@index([tenantId])
+  @@index([dietaryTagId])
+  @@map("product_dietary_tags")
+}
+
+/// Şube bazlı ürün geçersiz kılması. null alan → ürün varsayılanı kullanılır.
+model BranchProduct {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  branchId   String   @map("branch_id")
+  productId  String   @map("product_id")
+  /// false → bu şubede satılmıyor (görünmez). null → varsayılan (satılıyor).
+  available  Boolean?
+  /// null → ürünün genel tükendi durumu.
+  soldOut    Boolean? @map("sold_out")
+  /// Kuruş. null → ürün taban fiyatı.
+  priceMinor Int?     @map("price_minor")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch  @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  product Product @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([branchId, productId])
+  @@index([tenantId, productId])
+  @@map("branch_products")
+}
+
+/// Şube bazlı varyant fiyatı (en yüksek öncelikli fiyat kaynağı).
+model BranchVariantPrice {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  branchId   String   @map("branch_id")
+  variantId  String   @map("variant_id")
+  priceMinor Int      @map("price_minor")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch         @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([branchId, variantId])
+  @@index([tenantId, variantId])
+  @@map("branch_variant_prices")
+}
+
+// ─── Masalar & QR (Sprint 4) ─────────────────────────────────────────────────
+//
+// Bölge → şube, masa → şube + bölge, QR token → masa bağları BİLEŞİK yabancı anahtardır; bölge/masa
+// kimliğiyle birlikte branchId ve tenantId de eşleşmek zorunda. Böylece A kiracısının masası B'nin
+// bölgesine (ya da aynı kiracının başka şubesinin bölgesine) veritabanı düzeyinde bile taşınamaz.
+// Masa numarası / adı yalnızca görüntü verisidir; public QR adresi tahmin edilemez token kullanır.
+
+/// Salon, Bahçe, Teras… Fiziksel silinmez; pasifleştirilir (masalar ve QR geçmişi korunur).
+model DiningArea {
+  id          String   @id @default(cuid())
+  tenantId    String   @map("tenant_id")
+  branchId    String   @map("branch_id")
+  name        String
+  slug        String
+  description String?
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch        @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tables DiningTable[]
+
+  serviceRequests TableServiceRequest[]
+
+  preferredByReservations Reservation[]
+
+  @@unique([branchId, slug])
+  /// Bileşik FK hedefi: masa yalnızca AYNI kiracı + AYNI şubenin bölgesine bağlanabilir.
+  @@unique([id, branchId, tenantId])
+  @@index([tenantId, branchId, sortOrder])
+  @@map("dining_areas")
+}
+
+/// Masa. Şubesi oluşturulduktan sonra değişmez (QR token'ları şubeyle birlikte bağlıdır); bölgesi değişebilir.
+model DiningTable {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  branchId     String   @map("branch_id")
+  /// null → bölgesiz masa.
+  diningAreaId String?  @map("dining_area_id")
+  name         String
+  /// Görüntü numarası (ör. 12). Güvenlik kimliği DEĞİLDİR.
+  number       Int?
+  /// İşletmenin iç kodu (ör. "S-12").
+  code         String?
+  capacity     Int?
+  /// Rezervasyon: masanın kabul ettiği en az kişi (isteğe bağlı). Kapasitesi boş masa rezervasyona atanmaz.
+  capacityMin  Int?     @map("capacity_min")
+  /// Rezervasyonda kullanılabilir mi (ör. bar taburesi hariç tutulabilir).
+  reservable   Boolean  @default(true)
+  active       Boolean  @default(true)
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch   Branch         @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  area     DiningArea?    @relation(fields: [diningAreaId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: NoAction)
+  qrTokens TableQrToken[]
+  orders   Order[]
+
+  serviceRequests TableServiceRequest[]
+
+  aiConversations AiConversation[]
+
+  combinationTables TableCombinationTable[]
+  reservationTables ReservationTable[]
+
+  @@unique([branchId, name])
+  @@unique([branchId, number])
+  @@unique([branchId, code])
+  @@unique([id, branchId, tenantId])
+  @@index([tenantId, branchId, diningAreaId, sortOrder])
+  @@map("dining_tables")
+}
+
+/// Masa QR token'ı. Düz token SAKLANMAZ: token = HMAC-SHA256(QR_TOKEN_SECRET, nonce) ilk 128 bit, base64url.
+/// Veritabanında yalnızca SHA-256 özeti (arama anahtarı) ve rastgele nonce durur: veritabanı sızıntısı tek başına
+/// geçerli bir QR adresi üretmeye yetmez; sunucu sırrıyla yetkili kullanıcı aynı QR'ı yeniden indirebilir.
+/// İptal edilen token asla yeniden etkinleşmez; yenileme yeni satır oluşturur (geçmiş korunur).
+model TableQrToken {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  branchId   String    @map("branch_id")
+  tableId    String    @map("table_id")
+  tokenHash  String    @unique @map("token_hash")
+  tokenNonce String    @unique @map("token_nonce")
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  revokedAt  DateTime? @map("revoked_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  /// Toplam okutma sayısı (kişisel veri tutulmaz; olay bazlı geçmiş yok).
+  scanCount  Int       @default(0) @map("scan_count")
+  expiresAt  DateTime? @map("expires_at")
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  table  DiningTable @relation(fields: [tableId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: Cascade)
+  orders Order[]
+
+  serviceRequests TableServiceRequest[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, tableId, active])
+  @@map("table_qr_tokens")
+}
+
+// ─── Public QR menü görünümü (Sprint 5) ──────────────────────────────────────
+
+/// Public menü kart düzeni. İşletme yalnızca bu ön tanımlı düzenler arasından seçer (serbest CSS/HTML yok).
+enum PublicMenuStyle {
+  COMPACT
+  VISUAL
+  LUXURY
+  /// Koyu zemin, bulanık kapak arka planı, solda görselli yatay kartlar (mobil öncelikli).
+  MODERN
+}
+
+/// Müşteri QR menüsünün sunum ayarları. Marka renkleri / logo TenantSettings'te kalır (panel ve etiketle ortak);
+/// burada yalnızca public menüye özgü ayarlar durur. Satır yoksa varsayılanlar kullanılır.
+model PublicMenuSettings {
+  id                  String          @id @default(cuid())
+  tenantId            String          @unique @map("tenant_id")
+  style               PublicMenuStyle @default(MODERN)
+  /// Kısa karşılama metni (düz metin; HTML yorumlanmaz).
+  welcomeText         String?         @map("welcome_text")
+  /// https görsel adresi (harici URL sağlayıcısı kurallarıyla doğrulanır).
+  heroImageUrl        String?         @map("hero_image_url")
+  /// Yüklenen kapak (öncelikli); boşsa heroImageUrl.
+  heroAssetId         String?         @map("hero_asset_id")
+  showNutrition       Boolean         @default(true) @map("show_nutrition")
+  showAllergens       Boolean         @default(true) @map("show_allergens")
+  showIngredients     Boolean         @default(true) @map("show_ingredients")
+  showPreparationTime Boolean         @default(true) @map("show_preparation_time")
+  showPoweredBy       Boolean         @default(true) @map("show_powered_by")
+  /// "Google Yorum" sekmesi: işletmenin Google değerlendirme bağlantısı (https). Boşsa sekme haritaya yönlendirir.
+  googleReviewUrl     String?         @map("google_review_url")
+  createdAt           DateTime        @default(now()) @map("created_at")
+  updatedAt           DateTime        @updatedAt @map("updated_at")
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  heroAsset MediaAsset? @relation("HeroAsset", fields: [heroAssetId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("public_menu_settings")
+}
+
+// ─── Siparişler (Sprint 6) ───────────────────────────────────────────────────
+//
+// Sipariş GEÇMİŞİ değişmez: müşteriye görünen her bilgi (ürün / varyant / ekstra adı, birim fiyat, ekstra farkı,
+// masa / bölge / şube adı) gönderim anında satıra KOPYALANIR. Menü sonradan değişse / arşivlense de eski sipariş
+// aynı görünür. Canlı kayıtlara giden yabancı anahtarlar yalnızca analitik içindir (görüntüleme onlara dayanmaz).
+// Para: tamsayı kuruş. Tüm satırlar kiracıya bileşik yabancı anahtarla bağlıdır.
+
+enum OrderStatus {
+  SUBMITTED
+  ACCEPTED
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+  REJECTED
+}
+
+/// Siparişin kaynağı (ileride: WAITER, POS, AI).
+enum OrderSource {
+  QR_TABLE
+}
+
+enum OrderActorType {
+  CUSTOMER
+  STAFF
+  SYSTEM
+}
+
+model Order {
+  id                 String      @id @default(cuid())
+  tenantId           String      @map("tenant_id")
+  branchId           String      @map("branch_id")
+  tableId            String      @map("table_id")
+  /// Siparişin verildiği QR token'ı (masa bağlamının kanıtı). Token yenilense de sipariş masaya bağlı kalır.
+  qrTokenId          String?     @map("qr_token_id")
+  /// Müşteriye görünen, tahmin edilemez kimlik (128 bit, base64url). İç kimlik URL'de kullanılmaz.
+  publicId           String      @unique @map("public_id")
+  /// Şube içi artan numara (#1001, #1002…). Bkz. OrderSequence.
+  orderNumber        Int         @map("order_number")
+  status             OrderStatus @default(SUBMITTED)
+  source             OrderSource @default(QR_TABLE)
+  currency           String
+  subtotalMinor      Int         @map("subtotal_minor")
+  totalMinor         Int         @map("total_minor")
+  /// Kupon / sadakat ödülü indirimi (sunucu hesaplar). total = subtotal − discount (CHECK).
+  discountMinor      Int         @default(0) @map("discount_minor")
+  itemCount          Int         @map("item_count")
+  customerNote       String?     @map("customer_note")
+  locale             String
+  /// Gönderim anındaki görüntü kopyaları (masa adı / bölge / şube sonradan değişebilir).
+  branchName         String      @map("branch_name")
+  tableName          String      @map("table_name")
+  areaName           String?     @map("area_name")
+  /// Tekrarlanan gönderim koruması: istemci anahtarının SHA-256 özeti (anahtarın kendisi saklanmaz).
+  idempotencyKeyHash String      @map("idempotency_key_hash")
+  /// Aynı anahtarla farklı içerik gönderimini ayırt etmek için normalize edilmiş isteğin özeti.
+  requestHash        String      @map("request_hash")
+  rejectionReason    String?     @map("rejection_reason")
+  submittedAt        DateTime    @default(now()) @map("submitted_at")
+  acceptedAt         DateTime?   @map("accepted_at")
+  preparingAt        DateTime?   @map("preparing_at")
+  readyAt            DateTime?   @map("ready_at")
+  servedAt           DateTime?   @map("served_at")
+  /// Personel iptal açıklaması (iade yok).
+  cancellationReason String?     @map("cancellation_reason")
+  rejectedAt         DateTime?   @map("rejected_at")
+  cancelledAt        DateTime?   @map("cancelled_at")
+  createdAt          DateTime    @default(now()) @map("created_at")
+  updatedAt          DateTime    @updatedAt @map("updated_at")
+
+  tenant  Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch  Branch               @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  table   DiningTable          @relation(fields: [tableId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: Cascade)
+  qrToken TableQrToken?        @relation(fields: [qrTokenId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  items   OrderItem[]
+  history OrderStatusHistory[]
+  tickets OrderTicket[]
+
+  serviceRequests TableServiceRequest[]
+  /// Müşteri sipariş anında AÇIKÇA tanımlanmışsa (sadakat / CRM katılımı); geçmiş anonim siparişler anonim kalır.
+  customerId      String?               @map("customer_id")
+  customer        Customer?             @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  loyaltyEntries  LoyaltyLedger[]
+
+  promotion        OrderPromotion?
+  couponRedemption CouponRedemption?
+
+  payments           Payment[]
+  paymentAllocations PaymentAllocation[]
+
+  @@unique([tenantId, idempotencyKeyHash])
+  @@unique([branchId, orderNumber])
+  @@unique([id, tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, branchId, createdAt])
+  @@index([tenantId, tableId, createdAt])
+  @@index([tenantId, customerId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                  String  @id @default(cuid())
+  tenantId            String  @map("tenant_id")
+  orderId             String  @map("order_id")
+  /// Analitik bağlantı (ürün arşivlense de kalır); görüntüleme kopyalara dayanır.
+  productId           String? @map("product_id")
+  variantId           String? @map("variant_id")
+  /// Müşterinin gördüğü (seçili dildeki) ürün adı ve işletmenin varsayılan dilindeki adı (panel için).
+  productName         String  @map("product_name")
+  productNameDefault  String  @map("product_name_default")
+  variantName         String? @map("variant_name")
+  /// Ürün / varyant için çözülmüş birim fiyat (ekstralar hariç).
+  basePriceMinor      Int     @map("base_price_minor")
+  modifiersTotalMinor Int     @map("modifiers_total_minor")
+  /// basePrice + modifiersTotal
+  unitPriceMinor      Int     @map("unit_price_minor")
+  quantity            Int
+  lineTotalMinor      Int     @map("line_total_minor")
+  note                String?
+  sortOrder           Int     @map("sort_order")
+
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order     Order               @relation(fields: [orderId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  product   Product?            @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  variant   ProductVariant?     @relation(fields: [variantId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  modifiers OrderItemModifier[]
+
+  ticketItems OrderTicketItem[]
+
+  paymentAllocations PaymentAllocation[]
+
+  @@unique([id, tenantId])
+  @@index([orderId, sortOrder])
+  @@index([tenantId, productId])
+  @@map("order_items")
+}
+
+model OrderItemModifier {
+  id              String  @id @default(cuid())
+  tenantId        String  @map("tenant_id")
+  orderItemId     String  @map("order_item_id")
+  modifierId      String? @map("modifier_id")
+  modifierGroupId String? @map("modifier_group_id")
+  groupName       String  @map("group_name")
+  modifierName    String  @map("modifier_name")
+  priceDeltaMinor Int     @map("price_delta_minor")
+  sortOrder       Int     @map("sort_order")
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  item     OrderItem      @relation(fields: [orderItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  modifier Modifier?      @relation(fields: [modifierId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  group    ModifierGroup? @relation(fields: [modifierGroupId, tenantId], references: [id, tenantId], onDelete: NoAction)
+
+  @@index([orderItemId, sortOrder])
+  @@index([tenantId, modifierId])
+  @@map("order_item_modifiers")
+}
+
+/// Durum geçmişi (yalnızca eklenir). İlk satır: null → SUBMITTED (müşteri).
+model OrderStatusHistory {
+  id          String         @id @default(cuid())
+  tenantId    String         @map("tenant_id")
+  orderId     String         @map("order_id")
+  fromStatus  OrderStatus?   @map("from_status")
+  toStatus    OrderStatus    @map("to_status")
+  actorType   OrderActorType @map("actor_type")
+  actorUserId String?        @map("actor_user_id")
+  reason      String?
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@map("order_status_history")
+}
+
+/// Şube başına sipariş numarası sayacı. Tek atomik "INSERT … ON CONFLICT DO UPDATE … RETURNING" ile artırılır;
+/// satır kilidi yalnızca o şubenin sipariş transaction'ı boyunca tutulur (menü / diğer şubeler kilitlenmez).
+model OrderSequence {
+  branchId   String @id @map("branch_id")
+  tenantId   String @map("tenant_id")
+  lastNumber Int    @map("last_number")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@map("order_sequences")
+}
+
+// ─── Hazırlama istasyonları, mutfak fişleri (Sprint 7) ───────────────────────
+//
+// İstasyonlar ŞUBEYE aittir (İstanbul'da "Izgara 1", Ankara'da "Ana Mutfak"). Ürün → istasyon ataması da şube
+// bazlıdır (istasyon üzerinden). Sipariş kabul edilince her istasyon için bir fiş oluşur; fiş istasyon adını
+// KOPYALAR ve sipariş kalemlerine (değişmez kopyalar) bağlanır — sonradan yönlendirme değişse de eski fiş aynı
+// istasyonda kalır. İstasyon ve fiş silinmez (pasifleşir / iptal edilir).
+
+enum StationType {
+  KITCHEN
+  BAR
+  DESSERT
+  COLD
+  GRILL
+  CUSTOM
+}
+
+enum TicketStatus {
+  PENDING
+  PREPARING
+  READY
+  CANCELLED
+}
+
+model PreparationStation {
+  id        String      @id @default(cuid())
+  tenantId  String      @map("tenant_id")
+  branchId  String      @map("branch_id")
+  name      String
+  type      StationType @default(KITCHEN)
+  active    Boolean     @default(true)
+  sortOrder Int         @default(0) @map("sort_order")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  tenant           Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch           Branch                      @relation("BranchStations", fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  defaultForBranch Branch[]                    @relation("BranchDefaultStation")
+  products         ProductPreparationStation[]
+  tickets          OrderTicket[]
+
+  @@unique([branchId, name])
+  /// Bileşik FK hedefi: atama / fiş / şube varsayılanı yalnızca AYNI kiracı + AYNI şubenin istasyonuna bağlanır.
+  @@unique([id, branchId, tenantId])
+  @@index([tenantId, branchId, sortOrder])
+  @@map("preparation_stations")
+}
+
+/// Ürün → istasyon (şube bazlı; şube istasyondan gelir). Atama yoksa şubenin varsayılan istasyonu kullanılır.
+model ProductPreparationStation {
+  tenantId  String @map("tenant_id")
+  branchId  String @map("branch_id")
+  productId String @map("product_id")
+  stationId String @map("station_id")
+
+  tenant  Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product            @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  station PreparationStation @relation(fields: [stationId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: Cascade)
+
+  @@id([productId, stationId])
+  @@index([tenantId, branchId])
+  @@index([stationId])
+  @@map("product_preparation_stations")
+}
+
+/// İstasyon fişi — bir siparişin bir istasyona düşen kısmı. Müşteri siparişi TEK kalır.
+model OrderTicket {
+  id          String       @id @default(cuid())
+  tenantId    String       @map("tenant_id")
+  branchId    String       @map("branch_id")
+  orderId     String       @map("order_id")
+  stationId   String       @map("station_id")
+  /// Fiş oluştuğu andaki istasyon adı / türü (istasyon sonradan yeniden adlandırılsa da fiş aynı kalır).
+  stationName String       @map("station_name")
+  stationType StationType  @map("station_type")
+  status      TicketStatus @default(PENDING)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  startedAt   DateTime?    @map("started_at")
+  readyAt     DateTime?    @map("ready_at")
+  cancelledAt DateTime?    @map("cancelled_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  tenant  Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order   Order              @relation(fields: [orderId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  station PreparationStation @relation(fields: [stationId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: NoAction)
+  items   OrderTicketItem[]
+
+  @@unique([orderId, stationId])
+  @@unique([id, tenantId])
+  @@index([tenantId, stationId, status, createdAt])
+  @@index([tenantId, branchId, status])
+  /// Analitik (Sprint 12): kiracı geneli tarih aralığı — istasyon / durumdan bağımsız.
+  @@index([tenantId, createdAt])
+  @@map("order_tickets")
+}
+
+/// Fiş kalemi → sipariş kalemi kopyası (ad / varyant / ekstra / not oradan gösterilir; canlı menüye bakılmaz).
+model OrderTicketItem {
+  id          String @id @default(cuid())
+  tenantId    String @map("tenant_id")
+  ticketId    String @map("ticket_id")
+  orderItemId String @map("order_item_id")
+  sortOrder   Int    @map("sort_order")
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  ticket    OrderTicket @relation(fields: [ticketId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  orderItem OrderItem   @relation(fields: [orderItemId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([ticketId, orderItemId])
+  @@index([ticketId, sortOrder])
+  @@map("order_ticket_items")
+}
+
+// ─── Sprint 8: masa servis talepleri (garson çağrısı, su, peçete, hesap, özel istek) ───
+
+enum ServiceRequestType {
+  WAITER
+  WATER
+  NAPKIN
+  BILL
+  CUSTOM
+}
+
+enum ServiceRequestStatus {
+  OPEN
+  ACKNOWLEDGED
+  COMPLETED
+  CANCELLED
+}
+
+/// Masadan gelen servis talebi. Kiracı / şube / masa YALNIZCA güvenilir QR bağlamından gelir (tarayıcıdan değil).
+/// Masa / bölge / şube adları oluşturma anında kopyalanır (masa yeniden adlandırılsa da geçmiş anlamlı kalır).
+/// Aynı masa + tip için en fazla bir AKTİF (OPEN / ACKNOWLEDGED) talep: active_slot yalnızca aktifken dolu ('ACTIVE')
+/// ve (table_id, type, active_slot) benzersiz — NULL'lar çakışmaz; CHECK durumla tutarlılığı zorlar (migration).
+model TableServiceRequest {
+  id                   String               @id @default(cuid())
+  tenantId             String               @map("tenant_id")
+  branchId             String               @map("branch_id")
+  tableId              String               @map("table_id")
+  diningAreaId         String?              @map("dining_area_id")
+  qrTokenId            String?              @map("qr_token_id")
+  /// Yüksek entropili opak kimlik (iç kimlik dışarı çıkmaz).
+  publicId             String               @unique @map("public_id")
+  type                 ServiceRequestType
+  status               ServiceRequestStatus @default(OPEN)
+  activeSlot           String?              @default("ACTIVE") @map("active_slot")
+  note                 String?
+  /// Hesap talebinde müşterinin bu masadan verdiği (doğrulanmış) son sipariş; zorunlu değil.
+  relatedOrderId       String?              @map("related_order_id")
+  branchName           String               @map("branch_name")
+  areaName             String?              @map("area_name")
+  tableName            String               @map("table_name")
+  createdAt            DateTime             @default(now()) @map("created_at")
+  acknowledgedAt       DateTime?            @map("acknowledged_at")
+  completedAt          DateTime?            @map("completed_at")
+  cancelledAt          DateTime?            @map("cancelled_at")
+  /// Kullanıcı silinse de kayıt kalır (FK yok); görünen ad güvenli biçimde kopyalanır (ad + soyad baş harfi, e-posta yok).
+  acknowledgedByUserId String?              @map("acknowledged_by_user_id")
+  acknowledgedByName   String?              @map("acknowledged_by_name")
+  completedByUserId    String?              @map("completed_by_user_id")
+  cancelledBy          OrderActorType?      @map("cancelled_by")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
+  tenant       Tenant                             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch       Branch                             @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  table        DiningTable                        @relation(fields: [tableId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: Cascade)
+  area         DiningArea?                        @relation(fields: [diningAreaId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: NoAction)
+  qrToken      TableQrToken?                      @relation(fields: [qrTokenId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  /// İsteğe bağlı: tanımlı müşteri (servis panosunda iletişim bilgisi GÖSTERİLMEZ).
+  customerId   String?                            @map("customer_id")
+  customer     Customer?                          @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  relatedOrder Order?                             @relation(fields: [relatedOrderId, tenantId], references: [id, tenantId], onDelete: NoAction)
+  history      TableServiceRequestStatusHistory[]
+
+  @@unique([tableId, type, activeSlot])
+  @@unique([id, tenantId])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, branchId, createdAt])
+  @@index([tenantId, tableId, createdAt])
+  /// Analitik (Sprint 12): kiracı geneli tarih aralığı — durumdan bağımsız.
+  @@index([tenantId, createdAt])
+  @@map("table_service_requests")
+}
+
+/// Durum geçmişi (yanıt süresi / personel performansı analitiği için ayrıntılı zaman çizelgesi).
+model TableServiceRequestStatusHistory {
+  id          String                @id @default(cuid())
+  tenantId    String                @map("tenant_id")
+  requestId   String                @map("request_id")
+  fromStatus  ServiceRequestStatus? @map("from_status")
+  toStatus    ServiceRequestStatus  @map("to_status")
+  actorType   OrderActorType        @map("actor_type")
+  actorUserId String?               @map("actor_user_id")
+  createdAt   DateTime              @default(now()) @map("created_at")
+
+  tenant  Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  request TableServiceRequest @relation(fields: [requestId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+  @@map("table_service_request_status_history")
+}
+
+// ─── Sprint 9: sesli AI asistan ───
+
+enum AiTone {
+  WARM
+  FORMAL
+  CASUAL
+}
+
+enum AiMessageRole {
+  USER
+  ASSISTANT
+}
+
+enum AiInputMode {
+  VOICE
+  TEXT
+}
+
+enum AiUsageKind {
+  CONVERSATION
+  CHAT
+  STT
+  TTS
+  /// İşletme Danışmanı açıklaması (Sprint 15) — müşteri sesli AI kullanımından ayrı sayılır.
+  ADVISOR
+}
+
+/// İşletmenin AI asistan ayarları. Sağlayıcı anahtarları burada TUTULMAZ (yalnızca sunucu ortam değişkenleri).
+model AiSettings {
+  id                   String   @id @default(cuid())
+  tenantId             String   @unique @map("tenant_id")
+  enabled              Boolean  @default(false)
+  assistantName        String   @default("MasaNova AI") @map("assistant_name")
+  welcomeMessage       String?  @map("welcome_message")
+  tone                 AiTone   @default(WARM)
+  /// Düşük güvenli işletme tercihi (≤ 300); platform güvenlik kuralları her zaman önce gelir.
+  customInstructions   String?  @map("custom_instructions")
+  allowRecommendations Boolean  @default(true) @map("allow_recommendations")
+  allowCartActions     Boolean  @default(true) @map("allow_cart_actions")
+  allowServiceActions  Boolean  @default(true) @map("allow_service_actions")
+  voiceEnabled         Boolean  @default(true) @map("voice_enabled")
+  /// null → işletmenin varsayılan dili.
+  defaultVoiceLanguage String?  @map("default_voice_language")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("ai_settings")
+}
+
+/// Müşteri AI oturumu. Masa QR'ı paylaşıldığı için değil, YALNIZCA tarayıcıya verilen kanıtla (proof) sürdürülür:
+/// sunucuda kanıtın SHA-256 özeti tutulur; kanıt + aynı masa bağlamı + süre birlikte gerekir.
+model AiConversation {
+  id                   String    @id @default(cuid())
+  tenantId             String    @map("tenant_id")
+  branchId             String    @map("branch_id")
+  tableId              String    @map("table_id")
+  publicId             String    @unique @map("public_id")
+  proofHash            String    @unique @map("proof_hash")
+  uiLocale             String    @map("ui_locale")
+  conversationLanguage String    @map("conversation_language")
+  messageCount         Int       @default(0) @map("message_count")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  lastActivityAt       DateTime  @default(now()) @map("last_activity_at")
+  expiresAt            DateTime  @map("expires_at")
+  endedAt              DateTime? @map("ended_at")
+
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch   Branch      @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  table    DiningTable @relation(fields: [tableId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: Cascade)
+  messages AiMessage[]
+
+  /// Yapılandırılmış kısa özet (kişi sayısı, bütçe, diyet, acı tercihi, son niyet) — gizli akıl yürütme / kişisel veri yok.
+  context Json?
+  turns   AiTurn[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tableId, lastActivityAt])
+  @@map("ai_conversations")
+}
+
+/// Mesaj: yalnızca görünür içerik + yapılandırılmış meta (eylem kartları, ürün anahtarları). Gizli akıl yürütme TUTULMAZ.
+model AiMessage {
+  id             String        @id @default(cuid())
+  tenantId       String        @map("tenant_id")
+  conversationId String        @map("conversation_id")
+  publicId       String        @unique @map("public_id")
+  role           AiMessageRole
+  inputMode      AiInputMode?  @map("input_mode")
+  content        String
+  language       String
+  metadata       Json?
+  inputTokens    Int           @default(0) @map("input_tokens")
+  outputTokens   Int           @default(0) @map("output_tokens")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation AiConversation @relation(fields: [conversationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  /// Analitik (Sprint 12): dil dağılımı / eylem kartları — kiracı + rol + tarih (metin SEÇİLMEZ).
+  @@index([tenantId, role, createdAt])
+  @@map("ai_messages")
+}
+
+/// Kullanım kaydı (faturalama fiyatı YOK; yalnızca ölçüm): mesaj, token, STT milisaniye, TTS karakter, gecikme, sonuç.
+model AiUsage {
+  id             String      @id @default(cuid())
+  tenantId       String      @map("tenant_id")
+  /// Konuşmaya yalnızca referans (FK YOK): kullanım kaydı konuşma silinse / süresi dolsa da kalır.
+  conversationId String?     @map("conversation_id")
+  kind           AiUsageKind
+  provider       String
+  model          String?
+  inputTokens    Int         @default(0) @map("input_tokens")
+  outputTokens   Int         @default(0) @map("output_tokens")
+  sttMs          Int         @default(0) @map("stt_ms")
+  ttsCharacters  Int         @default(0) @map("tts_characters")
+  latencyMs      Int         @default(0) @map("latency_ms")
+  success        Boolean     @default(true)
+  errorCode      String?     @map("error_code")
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([createdAt])
+  @@map("ai_usage")
+}
+
+// ─── Sprint 10: canlı sesli tur (idempotency + gecikme / kesinti ölçümü) ───
+
+enum AiTurnStatus {
+  PROCESSING
+  COMPLETED
+  INTERRUPTED
+  FAILED
+}
+
+enum AiTurnMode {
+  REALTIME
+  FALLBACK
+}
+
+/// Bir mantıksal kullanıcı turu. (conversation_id, turn_key) benzersiz: yeniden bağlanma / yeniden deneme aynı turu
+/// İKİNCİ kez işlemez (tamamlanmışsa kayıtlı yanıt yeniden gönderilir; mesaj / kullanım kaydı çoğalmaz).
+model AiTurn {
+  id                 String       @id @default(cuid())
+  tenantId           String       @map("tenant_id")
+  conversationId     String       @map("conversation_id")
+  turnKey            String       @map("turn_key")
+  mode               AiTurnMode
+  status             AiTurnStatus @default(PROCESSING)
+  attempts           Int          @default(1)
+  assistantMessageId String?      @map("assistant_message_id")
+  sttMs              Int?         @map("stt_ms")
+  firstTextMs        Int?         @map("first_text_ms")
+  firstAudioMs       Int?         @map("first_audio_ms")
+  totalMs            Int?         @map("total_ms")
+  audioInMs          Int          @default(0) @map("audio_in_ms")
+  audioOutMs         Int          @default(0) @map("audio_out_ms")
+  interruptedAt      DateTime?    @map("interrupted_at")
+  errorCode          String?      @map("error_code")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation AiConversation @relation(fields: [conversationId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@unique([conversationId, turnKey])
+  @@index([tenantId, createdAt])
+  @@map("ai_turns")
+}
+
+// ─── Yüklenen görseller (Sprint 13) ──────────────────────────────────────────
+
+enum MediaKind {
+  LOGO
+  HERO
+  CATEGORY
+  PRODUCT
+}
+
+/// Kiracının yüklediği görsel. Veritabanı DOSYA YOLU tutmaz: storageProvider + storageKey (sağlayıcıdan bağımsız önek,
+/// ör. "tenants/<kiracı-anahtarı>/products/<rastgele>") + renditions (ad, boyut, bayt). Bayt verisi asla PostgreSQL'e yazılmaz.
+/// Referanslar (ürün görseli, kategori, kapak, logo) bileşik FK ile aynı kiracıya bağlıdır; referanslı varlık silinemez.
+model MediaAsset {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  kind            MediaKind
+  storageProvider String    @map("storage_provider")
+  storageKey      String    @map("storage_key")
+  /// Ana çıktının biçimi (image/webp).
+  mimeType        String    @map("mime_type")
+  width           Int
+  height          Int
+  /// Tüm çıktıların toplam boyutu (gelecekteki kota için).
+  sizeBytes       Int       @map("size_bytes")
+  /// [{ name, width, height, bytes, format }]
+  renditions      Json
+  createdByUserId String?   @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  productImages ProductImage[]       @relation("ProductImageAsset")
+  categories    MenuCategory[]       @relation("CategoryImageAsset")
+  heroSettings  PublicMenuSettings[] @relation("HeroAsset")
+  logoSettings  TenantSettings[]     @relation("LogoAsset")
+
+  @@unique([id, tenantId])
+  @@unique([storageProvider, storageKey])
+  @@index([tenantId, kind, createdAt])
+  @@map("media_assets")
+}
+
+// ─── İşletme Danışmanı (Sprint 15) ───────────────────────────────────────────
+
+enum AdvisorInsightStatus {
+  NEW
+  SEEN
+  DISMISSED
+}
+
+enum AdvisorFeedback {
+  USEFUL
+  NOT_USEFUL
+}
+
+/// Deterministik kurallarla üretilmiş içgörü (salt okunur danışman — hiçbir sistem verisini DEĞİŞTİRMEZ).
+/// Kimlik: (kiracı, kapsam [şube | "all"], aralık, tür, özne). Olgular değişmediyse (factHash) önceki AI açıklaması
+/// yeniden kullanılır; kapatma yalnızca önemli değişimde (materialHash) sıfırlanır. Müşteri / konuşma verisi İÇERMEZ.
+model AdvisorInsight {
+  id                String               @id @default(cuid())
+  tenantId          String               @map("tenant_id")
+  /// null = tüm şubeler
+  branchId          String?              @map("branch_id")
+  scopeKey          String               @map("scope_key")
+  range             String
+  type              String
+  category          String
+  subjectKey        String               @default("") @map("subject_key")
+  severity          String
+  confidence        String
+  /// Aday olgular + "nasıl hesaplandı" satırları (yalnızca toplu sayılar)
+  facts             Json
+  factHash          String               @map("fact_hash")
+  materialHash      String               @map("material_hash")
+  periodStart       DateTime             @map("period_start")
+  periodEnd         DateTime             @map("period_end")
+  comparisonStart   DateTime             @map("comparison_start")
+  comparisonEnd     DateTime             @map("comparison_end")
+  status            AdvisorInsightStatus @default(NEW)
+  /// Kurallar bu içgörüyü hâlâ üretiyor mu (üretmiyorsa gösterilmez; geçmiş kalır)
+  active            Boolean              @default(true)
+  /// Doğrulanmış AI açıklaması { summary, whyItMatters, suggestedAction } — yalnızca explanationHash = factHash iken geçerli
+  explanation       Json?
+  explanationHash   String?              @map("explanation_hash")
+  explanationModel  String?              @map("explanation_model")
+  feedback          AdvisorFeedback?
+  dismissedAt       DateTime?            @map("dismissed_at")
+  dismissedByUserId String?              @map("dismissed_by_user_id")
+  generatedAt       DateTime             @default(now()) @map("generated_at")
+  updatedAt         DateTime             @updatedAt @map("updated_at")
+  expiresAt         DateTime             @map("expires_at")
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenantId, scopeKey, range, type, subjectKey])
+  @@index([tenantId, status, active])
+  @@map("advisor_insights")
+}
+
+// ─── CRM, onay ve sadakat (Sprint 16) ────────────────────────────────────────
+// Müşteri kimliği İSTEĞE BAĞLIDIR: menü, sipariş, servis ve AI kimliksiz çalışır. Kimlik yalnızca müşterinin açık
+// eylemiyle başlar (parmak izi / IP eşleştirme / gizli hesap YOK). Kayıtlar kiracıya özeldir (kiracılar arası
+// benzersizlik YOK: aynı telefon farklı restoranlarda bağımsız müşteridir).
+
+enum CustomerSource {
+  QR_OPT_IN
+  ORDER_CHECKOUT
+  LOYALTY_JOIN
+  MANUAL_STAFF
+}
+
+enum ConsentType {
+  PRIVACY
+  MARKETING_EMAIL
+  MARKETING_SMS
+  MARKETING_WHATSAPP
+  LOYALTY
+}
+
+enum ConsentStatus {
+  GRANTED
+  REVOKED
+}
+
+enum ConsentSource {
+  QR_OPT_IN
+  CUSTOMER_PROFILE
+  MANUAL_STAFF
+}
+
+enum ContactChannel {
+  PHONE
+  EMAIL
+}
+
+enum LoyaltyEntryType {
+  EARN
+  REDEEM
+  ADJUSTMENT
+  EXPIRE
+  REVERSAL
+}
+
+enum LoyaltyEarnTrigger {
+  ACCEPTED
+  SERVED
+}
+
+model Customer {
+  id                  String         @id @default(cuid())
+  tenantId            String         @map("tenant_id")
+  /// Yüksek entropili, dışarıya açık kimlik (iç kimlik asla dışarı verilmez)
+  publicId            String         @unique @map("public_id")
+  firstName           String?        @map("first_name")
+  lastName            String?        @map("last_name")
+  /// Gösterim biçimi (E.164) ve arama / eşleştirme için normalize değer
+  phone               String?
+  phoneNormalized     String?        @map("phone_normalized")
+  email               String?
+  emailNormalized     String?        @map("email_normalized")
+  phoneVerifiedAt     DateTime?      @map("phone_verified_at")
+  emailVerifiedAt     DateTime?      @map("email_verified_at")
+  preferredLanguage   String?        @map("preferred_language")
+  source              CustomerSource
+  /// Personel notu (yalnızca sahip / müdür; müşteriye gösterilmez; düz metin, ≤ 500)
+  staffNote           String?        @map("staff_note")
+  /// Silme / anonimleştirme talebi (temel; iş akışı sonraki sprint)
+  deletionRequestedAt DateTime?      @map("deletion_requested_at")
+  lastSeenAt          DateTime?      @map("last_seen_at")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  tenant           Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  verifiedContacts CustomerVerifiedContact[]
+  consents         CustomerConsent[]
+  sessions         CustomerSession[]
+  loyaltyAccounts  LoyaltyAccount[]
+  orders           Order[]
+  serviceRequests  TableServiceRequest[]
+
+  reservations Reservation[]
+
+  couponRedemptions CouponRedemption[]
+
+  payments Payment[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, phoneNormalized])
+  @@index([tenantId, emailNormalized])
+  @@index([tenantId, createdAt])
+  @@map("customers")
+}
+
+/// Doğrulanmış iletişim bilgisi → müşteri (kiracı başına tekil). Doğrulanmamış iletişim burada YOK → sessiz birleştirme olmaz.
+model CustomerVerifiedContact {
+  id              String         @id @default(cuid())
+  tenantId        String         @map("tenant_id")
+  customerId      String         @map("customer_id")
+  channel         ContactChannel
+  valueNormalized String         @map("value_normalized")
+  verifiedAt      DateTime       @default(now()) @map("verified_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenantId, channel, valueNormalized])
+  @@map("customer_verified_contacts")
+}
+
+/// Onay kanıtı — EKLEME-YALNIZ: her verme / geri alma yeni satır; güncel durum = türün en son satırı. Metin sürümü saklanır.
+model CustomerConsent {
+  id         String        @id @default(cuid())
+  tenantId   String        @map("tenant_id")
+  customerId String        @map("customer_id")
+  type       ConsentType
+  status     ConsentStatus
+  source     ConsentSource
+  /// Onay metni sürümü (ör. "2026-10-v1") — metin değişince eski kayıtlar yeniden yazılmaz
+  version    String
+  grantedAt  DateTime?     @map("granted_at")
+  revokedAt  DateTime?     @map("revoked_at")
+  createdAt  DateTime      @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, customerId, type, createdAt])
+  @@map("customer_consents")
+}
+
+/// Tarayıcı ↔ müşteri bağı: opak belirteç httpOnly çerezde, burada yalnızca SHA-256 özeti. Masa yetkisi VERMEZ.
+model CustomerSession {
+  id         String    @id @default(cuid())
+  tenantId   String    @map("tenant_id")
+  customerId String    @map("customer_id")
+  tokenHash  String    @unique @map("token_hash")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastUsedAt DateTime  @default(now()) @map("last_used_at")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, customerId])
+  @@map("customer_sessions")
+}
+
+/// Tek kullanımlık doğrulama kodu (yalnızca özet; kod loglanmaz). Katılım seçimleri doğrulanana kadar burada bekler.
+model ContactVerification {
+  id              String         @id @default(cuid())
+  tenantId        String         @map("tenant_id")
+  publicId        String         @unique @map("public_id")
+  channel         ContactChannel
+  valueNormalized String         @map("value_normalized")
+  codeHash        String         @map("code_hash")
+  attempts        Int            @default(0)
+  expiresAt       DateTime       @map("expires_at")
+  consumedAt      DateTime?      @map("consumed_at")
+  payload         Json
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, channel, valueNormalized, createdAt])
+  @@map("contact_verifications")
+}
+
+/// Sadakat ayarları — varsayılan KAPALI; puan kuralı işletme yapılandırana kadar uygulanmaz.
+model LoyaltySettings {
+  id            String             @id @default(cuid())
+  tenantId      String             @unique @map("tenant_id")
+  enabled       Boolean            @default(false)
+  /// 1 puan için gereken sipariş tutarı (kuruş). null → kural yok, puan kazanılmaz.
+  minorPerPoint Int?               @map("minor_per_point")
+  earnOn        LoyaltyEarnTrigger @default(SERVED) @map("earn_on")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("loyalty_settings")
+}
+
+model LoyaltyAccount {
+  id         String   @id @default(cuid())
+  tenantId   String   @map("tenant_id")
+  customerId String   @map("customer_id")
+  /// Müşteri sadakat onayını geri alırsa false (yeni puan kazanılmaz; defter korunur)
+  active     Boolean  @default(true)
+  joinedAt   DateTime @default(now()) @map("joined_at")
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer        @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  entries  LoyaltyLedger[]
+
+  @@unique([tenantId, customerId])
+  @@unique([id, tenantId])
+  @@map("loyalty_accounts")
+}
+
+/// Puan defteri — bakiye defterden TÜRETİLİR. Bir sipariş yalnızca BİR kez kazandırır: (kiracı, sipariş, tür) tekil.
+model LoyaltyLedger {
+  id              String           @id @default(cuid())
+  tenantId        String           @map("tenant_id")
+  accountId       String           @map("account_id")
+  type            LoyaltyEntryType
+  /// İşaretli (EARN +, REDEEM / EXPIRE −, ADJUSTMENT ±)
+  points          Int
+  orderId         String?          @map("order_id")
+  reason          String?
+  createdByUserId String?          @map("created_by_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  /// REVERSAL: geri alınan defter satırı (tek kez — benzersiz). Eski satır ASLA değiştirilmez.
+  reversesEntryId String?          @unique @map("reverses_entry_id")
+  /// REDEEM: kullanılan ödül.
+  rewardId        String?          @map("reward_id")
+
+  tenant  Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  account LoyaltyAccount @relation(fields: [accountId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  // Uygulamada sipariş silinmez; yalnızca kiracı / test temizliği silerse defter satırı da gider.
+  order   Order?         @relation(fields: [orderId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  // Asıl satır yalnızca sipariş / kiracı temizliğiyle silinir; geri alma satırı da onunla gider.
+  reversesEntry LoyaltyLedger? @relation("LedgerReversal", fields: [reversesEntryId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reversedBy    LoyaltyLedger? @relation("LedgerReversal")
+  reward        LoyaltyReward? @relation(fields: [rewardId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([tenantId, orderId, type])
+  @@index([tenantId, accountId, createdAt])
+  @@map("loyalty_ledger")
+}
+
+// ─── Sprint 17: Rezervasyon, masa planlama, oturtma ─────────────────────────
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  SEATED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum ReservationSource {
+  PUBLIC_WEB
+  STAFF
+  WALK_IN
+  PHONE
+  OTHER
+}
+
+/// Kiracı başına rezervasyon kuralları (şube geçersiz kılma ileride). Varsayılan KAPALI.
+model ReservationSettings {
+  id                        String   @id @default(cuid())
+  tenantId                  String   @unique @map("tenant_id")
+  enabled                   Boolean  @default(false)
+  publicBookingEnabled      Boolean  @default(false) @map("public_booking_enabled")
+  autoConfirm               Boolean  @default(true) @map("auto_confirm")
+  defaultDurationMinutes    Int      @default(90) @map("default_duration_minutes")
+  slotIntervalMinutes       Int      @default(30) @map("slot_interval_minutes")
+  minAdvanceMinutes         Int      @default(60) @map("min_advance_minutes")
+  maxAdvanceDays            Int      @default(60) @map("max_advance_days")
+  minPartySize              Int      @default(1) @map("min_party_size")
+  maxPartySize              Int      @default(8) @map("max_party_size")
+  bufferMinutes             Int      @default(0) @map("buffer_minutes")
+  cancellationCutoffMinutes Int      @default(60) @map("cancellation_cutoff_minutes")
+  noShowGraceMinutes        Int      @default(15) @map("no_show_grace_minutes")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("reservation_settings")
+}
+
+/// Şube açılış saatleri (rezervasyon kabulü). weekday: 1 = Pazartesi … 7 = Pazar (ISO). Dakika: yerel gün başından.
+model BranchOpeningHours {
+  id           String @id @default(cuid())
+  tenantId     String @map("tenant_id")
+  branchId     String @map("branch_id")
+  weekday      Int
+  opensMinute  Int    @map("opens_minute")
+  closesMinute Int    @map("closes_minute")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@index([tenantId, branchId, weekday])
+  @@map("branch_opening_hours")
+}
+
+/// Kapalı dönem (tatil, özel etkinlik). [startsAt, endsAt) UTC.
+model ReservationBlackout {
+  id              String   @id @default(cuid())
+  tenantId        String   @map("tenant_id")
+  branchId        String   @map("branch_id")
+  startsAt        DateTime @map("starts_at")
+  endsAt          DateTime @map("ends_at")
+  reason          String?
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+
+  @@index([tenantId, branchId, startsAt])
+  @@map("reservation_blackouts")
+}
+
+/// Yöneticinin tanımladığı birleştirilebilir masa grubu (dinamik birleştirme YOK).
+model TableCombination {
+  id        String   @id @default(cuid())
+  tenantId  String   @map("tenant_id")
+  branchId  String   @map("branch_id")
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch Branch                  @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  tables TableCombinationTable[]
+
+  @@unique([branchId, name])
+  @@unique([id, branchId, tenantId])
+  @@map("table_combinations")
+}
+
+model TableCombinationTable {
+  combinationId String @map("combination_id")
+  tableId       String @map("table_id")
+  tenantId      String @map("tenant_id")
+  branchId      String @map("branch_id")
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  combination TableCombination @relation(fields: [combinationId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  table       DiningTable      @relation(fields: [tableId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([combinationId, tableId])
+  @@map("table_combination_tables")
+}
+
+model Reservation {
+  id                   String            @id @default(cuid())
+  tenantId             String            @map("tenant_id")
+  branchId             String            @map("branch_id")
+  publicId             String            @unique @map("public_id")
+  /// Yönetim bağlantısı: ham belirteç SAKLANMAZ (HMAC(sır, nonce) ile türetilir; özet aranır).
+  manageTokenHash      String            @unique @map("manage_token_hash")
+  manageTokenNonce     String            @map("manage_token_nonce")
+  customerId           String?           @map("customer_id")
+  guestName            String            @map("guest_name")
+  guestPhone           String?           @map("guest_phone")
+  guestPhoneNormalized String?           @map("guest_phone_normalized")
+  guestEmail           String?           @map("guest_email")
+  partySize            Int               @map("party_size")
+  startsAt             DateTime          @map("starts_at")
+  endsAt               DateTime          @map("ends_at")
+  durationMinutes      Int               @map("duration_minutes")
+  bufferMinutes        Int               @default(0) @map("buffer_minutes")
+  status               ReservationStatus
+  source               ReservationSource
+  preferredAreaId      String?           @map("preferred_area_id")
+  specialRequest       String?           @map("special_request")
+  internalNote         String?           @map("internal_note")
+  overridden           Boolean           @default(false)
+  locale               String            @default("tr")
+  idempotencyKeyHash   String?           @map("idempotency_key_hash")
+  requestHash          String?           @map("request_hash")
+  createdByUserId      String?           @map("created_by_user_id")
+  confirmedAt          DateTime?         @map("confirmed_at")
+  seatedAt             DateTime?         @map("seated_at")
+  completedAt          DateTime?         @map("completed_at")
+  cancelledAt          DateTime?         @map("cancelled_at")
+  noShowAt             DateTime?         @map("no_show_at")
+  cancelledBy          String?           @map("cancelled_by")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+
+  tenant        Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch                     @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  customer      Customer?                  @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  preferredArea DiningArea?                @relation(fields: [preferredAreaId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  tables        ReservationTable[]
+  history       ReservationStatusHistory[]
+
+  @@unique([tenantId, idempotencyKeyHash])
+  @@unique([id, tenantId])
+  @@unique([id, branchId, tenantId])
+  @@index([tenantId, branchId, startsAt])
+  @@index([tenantId, customerId])
+  @@map("reservations")
+}
+
+/// Masa doluluğu: [startsAt, blockedUntil) (blockedUntil = bitiş + temizlik payı). active = rezervasyon PENDING /
+/// CONFIRMED / SEATED. Çakışma veritabanında EXCLUDE (gist) kısıtıyla engellenir (migration SQL).
+model ReservationTable {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  branchId      String   @map("branch_id")
+  reservationId String   @map("reservation_id")
+  tableId       String   @map("table_id")
+  startsAt      DateTime @map("starts_at")
+  blockedUntil  DateTime @map("blocked_until")
+  active        Boolean  @default(true)
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservation Reservation @relation(fields: [reservationId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  table       DiningTable @relation(fields: [tableId, branchId, tenantId], references: [id, branchId, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([reservationId, tableId])
+  @@index([tenantId, branchId, startsAt])
+  @@map("reservation_tables")
+}
+
+model ReservationStatusHistory {
+  id            String             @id @default(cuid())
+  tenantId      String             @map("tenant_id")
+  reservationId String             @map("reservation_id")
+  fromStatus    ReservationStatus? @map("from_status")
+  toStatus      ReservationStatus  @map("to_status")
+  actorType     String             @map("actor_type")
+  actorUserId   String?            @map("actor_user_id")
+  reason        String?
+  createdAt     DateTime           @default(now()) @map("created_at")
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  reservation Reservation @relation(fields: [reservationId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, reservationId, createdAt])
+  @@map("reservation_status_history")
+}
+
+// ─── Sprint 18: Kupon, sadakat ödülü, kampanya ──────────────────────────────
+
+enum PromotionType {
+  FIXED_AMOUNT
+  PERCENTAGE
+  FREE_ITEM
+}
+
+enum PromotionScope {
+  ALL
+  PRODUCTS
+  CATEGORIES
+}
+
+enum CouponAudience {
+  ANYONE
+  IDENTIFIED
+  LOYALTY_MEMBER
+  REPEAT_CUSTOMER
+}
+
+enum CouponStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum OrderPromotionKind {
+  COUPON
+  LOYALTY_REWARD
+}
+
+enum CampaignStatus {
+  DRAFT
+  READY
+  ARCHIVED
+}
+
+enum CampaignChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum CampaignSegment {
+  ALL_OPTED_IN
+  LOYALTY_MEMBERS
+  REPEAT_CUSTOMERS
+  NO_VISIT_30_DAYS
+  HIGH_ORDER_COUNT
+  LANGUAGE_TR
+  LANGUAGE_EN
+}
+
+/// Kupon — kod kiracı içinde benzersiz (normalize). Para kuruş, yüzde baz puan (1000 = %10).
+model Coupon {
+  id                String         @id @default(cuid())
+  tenantId          String         @map("tenant_id")
+  branchId          String?        @map("branch_id")
+  code              String
+  codeNormalized    String         @map("code_normalized")
+  name              String
+  description       String?
+  type              PromotionType
+  valueMinor        Int?           @map("value_minor")
+  percentageBps     Int?           @map("percentage_bps")
+  maxDiscountMinor  Int?           @map("max_discount_minor")
+  minimumOrderMinor Int?           @map("minimum_order_minor")
+  scope             PromotionScope @default(ALL)
+  freeProductId     String?        @map("free_product_id")
+  startsAt          DateTime?      @map("starts_at")
+  endsAt            DateTime?      @map("ends_at")
+  /// Haftanın günleri bit maskesi (bit 0 = Pazartesi … bit 6 = Pazar); boş = her gün.
+  daysMask          Int?           @map("days_mask")
+  /// Günlük saat penceresi (şube yerel dakikası) [başlangıç, bitiş).
+  startMinute       Int?           @map("start_minute")
+  endMinute         Int?           @map("end_minute")
+  usageLimit        Int?           @map("usage_limit")
+  perCustomerLimit  Int?           @map("per_customer_limit")
+  audience          CouponAudience @default(ANYONE)
+  status            CouponStatus   @default(INACTIVE)
+  createdByUserId   String?        @map("created_by_user_id")
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch      Branch?            @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  freeProduct Product?           @relation("CouponFreeProduct", fields: [freeProductId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  products    CouponProduct[]
+  categories  CouponCategory[]
+  redemptions CouponRedemption[]
+  campaigns   Campaign[]
+  promotions  OrderPromotion[]
+
+  @@unique([tenantId, codeNormalized])
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+  @@map("coupons")
+}
+
+model CouponProduct {
+  couponId  String @map("coupon_id")
+  productId String @map("product_id")
+  tenantId  String @map("tenant_id")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  coupon  Coupon  @relation(fields: [couponId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  product Product @relation(fields: [productId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([couponId, productId])
+  @@map("coupon_products")
+}
+
+model CouponCategory {
+  couponId   String @map("coupon_id")
+  categoryId String @map("category_id")
+  tenantId   String @map("tenant_id")
+
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  coupon   Coupon       @relation(fields: [couponId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  category MenuCategory @relation(fields: [categoryId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([couponId, categoryId])
+  @@map("coupon_categories")
+}
+
+/// Kupon kullanımı — değiştirilemez kayıt; sipariş başına tek kupon (benzersiz).
+model CouponRedemption {
+  id            String   @id @default(cuid())
+  tenantId      String   @map("tenant_id")
+  couponId      String   @map("coupon_id")
+  orderId       String   @unique @map("order_id")
+  customerId    String?  @map("customer_id")
+  codeSnapshot  String   @map("code_snapshot")
+  discountMinor Int      @map("discount_minor")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  coupon   Coupon    @relation(fields: [couponId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  order    Order     @relation(fields: [orderId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  customer Customer? @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([couponId, orderId])
+  @@unique([orderId, tenantId])
+  @@index([tenantId, couponId, createdAt])
+  @@index([tenantId, customerId])
+  @@map("coupon_redemptions")
+}
+
+/// Sadakat ödülü (puanla alınır). Ödül tipi kuponla aynı hesaplayıcıyı kullanır.
+model LoyaltyReward {
+  id                 String        @id @default(cuid())
+  tenantId           String        @map("tenant_id")
+  name               String
+  description        String?
+  pointsCost         Int           @map("points_cost")
+  rewardType         PromotionType @map("reward_type")
+  fixedDiscountMinor Int?          @map("fixed_discount_minor")
+  percentageBps      Int?          @map("percentage_bps")
+  maxDiscountMinor   Int?          @map("max_discount_minor")
+  minimumOrderMinor  Int?          @map("minimum_order_minor")
+  freeProductId      String?       @map("free_product_id")
+  isActive           Boolean       @default(false) @map("is_active")
+  startsAt           DateTime?     @map("starts_at")
+  endsAt             DateTime?     @map("ends_at")
+  archivedAt         DateTime?     @map("archived_at")
+  createdByUserId    String?       @map("created_by_user_id")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  freeProduct Product?         @relation("RewardFreeProduct", fields: [freeProductId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  ledger      LoyaltyLedger[]
+  promotions  OrderPromotion[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, isActive])
+  @@map("loyalty_rewards")
+}
+
+/// Siparişin promosyon KOPYASI (canlı kupon / ödül satırına bağımlı değil). Sipariş başına tek promosyon (yığma yok).
+model OrderPromotion {
+  id            String             @id @default(cuid())
+  tenantId      String             @map("tenant_id")
+  orderId       String             @unique @map("order_id")
+  kind          OrderPromotionKind
+  couponId      String?            @map("coupon_id")
+  rewardId      String?            @map("reward_id")
+  codeSnapshot  String?            @map("code_snapshot")
+  label         String
+  promotionType PromotionType      @map("promotion_type")
+  discountMinor Int                @map("discount_minor")
+  pointsSpent   Int?               @map("points_spent")
+  freeItemName  String?            @map("free_item_name")
+  createdAt     DateTime           @default(now()) @map("created_at")
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order          @relation(fields: [orderId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  coupon Coupon?        @relation(fields: [couponId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  reward LoyaltyReward? @relation(fields: [rewardId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([orderId, tenantId])
+  @@index([tenantId, kind, createdAt])
+  @@map("order_promotions")
+}
+
+/// Kampanya taslağı — gönderim YOK (sağlayıcı yok). Kitle her önizlemede güncel onaylardan hesaplanır; liste saklanmaz.
+model Campaign {
+  id               String          @id @default(cuid())
+  tenantId         String          @map("tenant_id")
+  name             String
+  status           CampaignStatus  @default(DRAFT)
+  channel          CampaignChannel
+  segment          CampaignSegment
+  couponId         String?         @map("coupon_id")
+  messageTemplate  String          @map("message_template")
+  /// READY'ye geçişteki kitle SAYILARI (kişi listesi değil).
+  audienceSnapshot Json?           @map("audience_snapshot")
+  readyAt          DateTime?       @map("ready_at")
+  archivedAt       DateTime?       @map("archived_at")
+  createdByUserId  String?         @map("created_by_user_id")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  coupon Coupon? @relation(fields: [couponId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([tenantId, status])
+  @@map("campaigns")
+}
+
+// ─── Sprint 19: Ödeme orkestrasyonu ─────────────────────────────────────────
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  ONLINE
+  CASH
+  CARD_TERMINAL
+  OTHER
+}
+
+enum PaymentSplitMode {
+  FULL
+  AMOUNT
+  EQUAL
+  ITEMS
+}
+
+enum PaymentAttemptStatus {
+  CREATED
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+enum PaymentRefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+/// Kiracı ödeme ayarları (varsayılan KAPALI). Sağlayıcı yapılandırması ortam değişkenindedir; burada sır YOK.
+model PaymentSettings {
+  id                 String   @id @default(cuid())
+  tenantId           String   @unique @map("tenant_id")
+  enabled            Boolean  @default(false)
+  allowOnline        Boolean  @default(true) @map("allow_online")
+  allowCash          Boolean  @default(true) @map("allow_cash")
+  allowCardTerminal  Boolean  @default(true) @map("allow_card_terminal")
+  reservationMinutes Int      @default(15) @map("reservation_minutes")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("payment_settings")
+}
+
+/// Bir ödeme = siparişin bir PAYI (tamamı / tutar / eşit pay / ürünler). PENDING / PROCESSING iken payı
+/// reservedUntil'e kadar REZERVE eder; SUCCEEDED olunca kesinleşir. Kart verisi SAKLANMAZ (yalnız marka + son 4, varsa).
+model Payment {
+  id                 String           @id @default(cuid())
+  tenantId           String           @map("tenant_id")
+  branchId           String           @map("branch_id")
+  orderId            String           @map("order_id")
+  publicId           String           @unique @map("public_id")
+  customerId         String?          @map("customer_id")
+  provider           String
+  method             PaymentMethod
+  splitMode          PaymentSplitMode @map("split_mode")
+  status             PaymentStatus
+  currency           String
+  amountMinor        Int              @map("amount_minor")
+  refundedMinor      Int              @default(0) @map("refunded_minor")
+  reservedUntil      DateTime?        @map("reserved_until")
+  /// Geç onay: rezervasyon bittikten sonra gelen başarı, bakiye artık yoksa kesinleşmez → iade gerekir.
+  needsRefund        Boolean          @default(false) @map("needs_refund")
+  failureCode        String?          @map("failure_code")
+  cardBrand          String?          @map("card_brand")
+  cardLast4          String?          @map("card_last4")
+  idempotencyKeyHash String           @map("idempotency_key_hash")
+  requestHash        String           @map("request_hash")
+  createdByUserId    String?          @map("created_by_user_id")
+  succeededAt        DateTime?        @map("succeeded_at")
+  createdAt          DateTime         @default(now()) @map("created_at")
+  updatedAt          DateTime         @updatedAt @map("updated_at")
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch      Branch              @relation(fields: [branchId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  order       Order               @relation(fields: [orderId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  customer    Customer?           @relation(fields: [customerId, tenantId], references: [id, tenantId], onDelete: NoAction, onUpdate: NoAction)
+  attempts    PaymentAttempt[]
+  allocations PaymentAllocation[]
+  refunds     PaymentRefund[]
+
+  @@unique([tenantId, idempotencyKeyHash])
+  @@unique([id, tenantId])
+  @@index([tenantId, orderId])
+  @@index([tenantId, status, createdAt])
+  @@map("payments")
+}
+
+/// Sağlayıcı denemesi — her yeniden deneme YENİ satır; eskiler korunur.
+model PaymentAttempt {
+  id                String               @id @default(cuid())
+  tenantId          String               @map("tenant_id")
+  paymentId         String               @map("payment_id")
+  provider          String
+  providerReference String?              @map("provider_reference")
+  status            PaymentAttemptStatus
+  amountMinor       Int                  @map("amount_minor")
+  idempotencyKey    String               @map("idempotency_key")
+  checkoutUrl       String?              @map("checkout_url")
+  failureCode       String?              @map("failure_code")
+  createdAt         DateTime             @default(now()) @map("created_at")
+  completedAt       DateTime?            @map("completed_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([provider, providerReference])
+  @@unique([provider, idempotencyKey])
+  @@index([tenantId, paymentId])
+  @@map("payment_attempts")
+}
+
+/// Ödemenin siparişe dağılımı (değiştirilemez). ITEM satırı: hangi sipariş kaleminin kaç biriminin ödendiği.
+model PaymentAllocation {
+  id          String  @id @default(cuid())
+  tenantId    String  @map("tenant_id")
+  paymentId   String  @map("payment_id")
+  orderId     String  @map("order_id")
+  orderItemId String? @map("order_item_id")
+  quantity    Int?
+  amountMinor Int     @map("amount_minor")
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payment   Payment    @relation(fields: [paymentId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  order     Order      @relation(fields: [orderId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+  orderItem OrderItem? @relation(fields: [orderItemId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, orderId])
+  @@index([tenantId, paymentId])
+  @@map("payment_allocations")
+}
+
+/// İade kaydı (değiştirilemez tutar). Ödemenin asıl tutarı ASLA değişmez; iade toplamı ayrıca tutulur.
+model PaymentRefund {
+  id                 String              @id @default(cuid())
+  tenantId           String              @map("tenant_id")
+  paymentId          String              @map("payment_id")
+  amountMinor        Int                 @map("amount_minor")
+  status             PaymentRefundStatus
+  providerReference  String?             @map("provider_reference")
+  reason             String?
+  idempotencyKeyHash String              @map("idempotency_key_hash")
+  createdByUserId    String?             @map("created_by_user_id")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  completedAt        DateTime?           @map("completed_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tenantId, idempotencyKeyHash])
+  @@index([tenantId, paymentId])
+  @@map("payment_refunds")
+}
+
+/// İşlenmiş webhook olayı — (sağlayıcı, olay kimliği) benzersiz → tekrar gelen olay bir kez işlenir. Ham gövde SAKLANMAZ.
+model PaymentWebhookEvent {
+  id                String    @id @default(cuid())
+  provider          String
+  eventId           String    @map("event_id")
+  tenantId          String?   @map("tenant_id")
+  type              String
+  providerReference String?   @map("provider_reference")
+  outcome           String
+  receivedAt        DateTime  @default(now()) @map("received_at")
+  processedAt       DateTime? @map("processed_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, eventId])
+  @@map("payment_webhook_events")
+}
+
+// ─── Abonelik ve yetkilendirme (Sprint 20) ───────────────────────────────────
+
+/// Faturalama durumu — işletmenin operasyonel durumundan (Tenant.status) AYRI. Etkin durum her kontrolde
+/// zaman damgalarından türetilir (src/lib/billing/engine.ts); bu sütun son yönetici / bakım kararını tutar.
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  GRACE
+  CANCELLED
+  EXPIRED
+  SUSPENDED
+}
+
+enum SubscriptionEventType {
+  SUBSCRIPTION_CREATED
+  SUBSCRIPTION_PLAN_CHANGED
+  SUBSCRIPTION_STATUS_CHANGED
+  SUBSCRIPTION_TRIAL_STARTED
+  SUBSCRIPTION_TRIAL_EXTENDED
+  SUBSCRIPTION_PERIOD_CHANGED
+  SUBSCRIPTION_CANCEL_SCHEDULED
+  SUBSCRIPTION_CANCEL_UNSCHEDULED
+  SUBSCRIPTION_REACTIVATED
+  ENTITLEMENT_OVERRIDE_SET
+  ENTITLEMENT_OVERRIDE_REMOVED
+}
+
+/// Kiracının GÜNCEL aboneliği (kiracı başına en fazla bir satır — benzersiz). Geçmiş SubscriptionEvent'te.
+/// Faturalama sağlayıcısı yok: "manual" (Super Admin). Kart / ödeme verisi TUTULMAZ.
+model Subscription {
+  id                 String             @id @default(cuid())
+  tenantId           String             @unique @map("tenant_id")
+  plan               TenantPlan
+  status             SubscriptionStatus
+  /// "manual" (Super Admin) — ileride stripe / iyzico vb.; yetkilendirme sağlayıcıdan bağımsızdır.
+  provider           String             @default("manual")
+  /// Faturasız iç / demo kiracı (dönem sonu yok). Slug'a göre özel durum YAZILMAZ.
+  internal           Boolean            @default(false)
+  startsAt           DateTime           @default(now()) @map("starts_at")
+  currentPeriodStart DateTime           @default(now()) @map("current_period_start")
+  /// null = açık uçlu (iç kiracı / süresiz manuel)
+  currentPeriodEnd   DateTime?          @map("current_period_end")
+  trialEndsAt        DateTime?          @map("trial_ends_at")
+  graceEndsAt        DateTime?          @map("grace_ends_at")
+  cancelAtPeriodEnd  Boolean            @default(false) @map("cancel_at_period_end")
+  cancelledAt        DateTime?          @map("cancelled_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  tenant Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  events SubscriptionEvent[]
+
+  @@unique([id, tenantId])
+  @@index([status])
+  @@map("subscriptions")
+}
+
+/// Değiştirilemez abonelik zaman çizelgesi (yalnızca ekleme — tetikleyici).
+model SubscriptionEvent {
+  id             String                @id @default(cuid())
+  tenantId       String                @map("tenant_id")
+  subscriptionId String                @map("subscription_id")
+  type           SubscriptionEventType
+  fromPlan       TenantPlan?           @map("from_plan")
+  toPlan         TenantPlan?           @map("to_plan")
+  fromStatus     SubscriptionStatus?   @map("from_status")
+  toStatus       SubscriptionStatus?   @map("to_status")
+  actorUserId    String?               @map("actor_user_id")
+  /// Yalnızca güvenli alanlar (tarih / gerekçe / anahtar); ödeme verisi yok.
+  metadata       Json?
+  createdAt      DateTime              @default(now()) @map("created_at")
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  subscription Subscription @relation(fields: [subscriptionId, tenantId], references: [id, tenantId], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([tenantId, createdAt])
+  @@map("subscription_events")
+}
+
+/// Kiracıya özel istisna (paket tanımı DEĞİŞTİRİLMEZ): özellik aç / kapa ya da limit değeri. Süreli olabilir.
+model EntitlementOverride {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  /// Özellik kimliği ("voice_ai") ya da limit anahtarı ("maxTables")
+  key             String
+  /// Özellik istisnası: true / false; limit istisnasında null
+  enabled         Boolean?
+  /// Limit istisnası: sayı (−1 = sınırsız); özellik istisnasında null
+  limitValue      BigInt?   @map("limit_value")
+  expiresAt       DateTime? @map("expires_at")
+  reason          String
+  createdByUserId String?   @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@map("entitlement_overrides")
+}
+
+// ─── Sesli menü sözlüğü (menü tarama + ses eşleştirme dizini) ────────────────
+
+enum VoiceIndexStatus {
+  READY
+  STALE
+  BUILDING
+  FAILED
+}
+
+/// Kiracı başına sesli menü dizini: menüden otomatik üretilen söyleyişler (Türkçe okunuş, yabancı ad okunuşu, ayırt
+/// edici kısmi adlar), belirsiz adlar ve istatistik. Eşleştirme her zaman CANLI menüyle yapılır; dizin istatistik,
+/// belirsizlik incelemesi ve (doğrulanmış) ek söyleyişleri taşır. Menü değişince STALE olur ve yeniden kurulur.
+model VoiceMenuIndex {
+  id             String           @id @default(cuid())
+  tenantId       String           @unique @map("tenant_id")
+  status         VoiceIndexStatus @default(BUILDING)
+  menuHash       String?          @map("menu_hash")
+  builtAt        DateTime?        @map("built_at")
+  staleSince     DateTime?        @map("stale_since")
+  productCount   Int              @default(0) @map("product_count")
+  variantCount   Int              @default(0) @map("variant_count")
+  modifierCount  Int              @default(0) @map("modifier_count")
+  termCount      Int              @default(0) @map("term_count")
+  ambiguousCount Int              @default(0) @map("ambiguous_count")
+  /// { entries: [{ productKey, name, terms }], ambiguities: [...] } — iç kimlik yok (ürün anahtarı = public kısa ad).
+  lexicon        Json?
+  /// Yapay zekâ ile üretilip fonetik olarak doğrulanmış ek söyleyişler: { [productKey]: string[] }.
+  aiTerms        Json?            @map("ai_terms")
+  errorCode      String?          @map("error_code")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("voice_menu_indexes")
+}
+
+// ─── Yapay Zeka Eğitimi (platform geneli) ────────────────────────────────────
+
+/// Super Admin'in yazdığı serbest eğitim metni (ör. "Diyabet ve beslenme", "Kalori rehberi") — TÜM işletmelerin
+/// sesli / yazılı garsonu kullanır (kiracıya bağlı değil). Garson ilgili konu geçince getGuidance aracıyla metnin
+/// konuyla ilgili bölümlerini alır; ürünleri her zaman işletmenin kendi menüsünden seçer.
+model AiKnowledgeDocument {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0) @map("sort_order")
+  updatedById String?  @map("updated_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([active, sortOrder])
+  @@map("ai_knowledge_documents")
+}
