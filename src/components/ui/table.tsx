@@ -8,14 +8,14 @@ import { cn } from "@/lib/utils/cn";
  */
 export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="relative w-full overflow-x-auto rounded-lg border border-border bg-bg">
+    <div className="mn-glass relative w-full overflow-x-auto rounded-2xl">
       <table className={cn("mn-table w-full border-collapse text-sm", className)} {...props} />
     </div>
   );
 }
 
 export function THead({ className, ...props }: HTMLAttributes<HTMLTableSectionElement>) {
-  return <thead className={cn("bg-surface", className)} {...props} />;
+  return <thead className={cn("bg-white/50", className)} {...props} />;
 }
 
 export function TBody({ className, ...props }: HTMLAttributes<HTMLTableSectionElement>) {
@@ -23,14 +23,14 @@ export function TBody({ className, ...props }: HTMLAttributes<HTMLTableSectionEl
 }
 
 export function TR({ className, ...props }: HTMLAttributes<HTMLTableRowElement>) {
-  return <tr className={cn("border-b border-border transition-colors hover:bg-surface/60", className)} {...props} />;
+  return <tr className={cn("border-b border-stone-900/[0.06] transition-colors hover:bg-white/60", className)} {...props} />;
 }
 
 export function TH({ className, scope = "col", ...props }: ThHTMLAttributes<HTMLTableCellElement>) {
   return (
     <th
       scope={scope}
-      className={cn("h-10 border-b border-border px-4 text-left text-xs font-medium uppercase tracking-wide text-fg-subtle", className)}
+      className={cn("h-10 border-b border-stone-900/[0.06] px-4 text-left text-xs font-medium uppercase tracking-wide text-fg-subtle", className)}
       {...props}
     />
   );

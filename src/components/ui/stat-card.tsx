@@ -16,10 +16,14 @@ export function StatCard({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-col gap-3 rounded-lg border border-border bg-bg p-5 shadow-xs", className)}>
+    <div className={cn("mn-glass flex flex-col gap-3 rounded-2xl p-5", className)}>
       <div className="flex items-center justify-between gap-3">
         <span className="text-sm font-medium text-fg-subtle">{label}</span>
-        {Icon ? <Icon aria-hidden="true" className="size-4 text-fg-subtle" /> : null}
+        {Icon ? (
+          <span aria-hidden="true" className="grid size-9 place-items-center rounded-xl bg-[linear-gradient(135deg,rgb(234_88_12/0.14),rgb(220_38_38/0.10))] text-orange-600">
+            <Icon className="size-[1.125rem]" />
+          </span>
+        ) : null}
       </div>
       <div className="text-[1.75rem] font-semibold leading-none tracking-tight text-fg tabular-nums">{value}</div>
       {hint ? <div className="text-[0.8125rem] text-fg-subtle">{hint}</div> : null}
@@ -29,7 +33,7 @@ export function StatCard({
 
 export function StatCardSkeleton() {
   return (
-    <div aria-hidden="true" className="flex flex-col gap-3 rounded-lg border border-border bg-bg p-5">
+    <div aria-hidden="true" className="mn-glass flex flex-col gap-3 rounded-2xl p-5">
       <div className="h-4 w-24 animate-pulse rounded bg-surface-2" />
       <div className="h-7 w-16 animate-pulse rounded bg-surface-2" />
       <div className="h-3.5 w-32 animate-pulse rounded bg-surface-2" />

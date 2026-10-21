@@ -28,12 +28,12 @@ export function MobileNav({
         type="button"
         onClick={() => setOpen(true)}
         aria-expanded={open}
-        className="-ml-2 inline-flex size-11 items-center justify-center rounded-md text-fg-muted hover:bg-surface-2 hover:text-fg lg:hidden"
+        className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-white/80 bg-white/70 text-stone-700 hover:bg-white lg:hidden"
       >
         <Menu aria-hidden="true" className="size-5" />
         <span className="sr-only">Menüyü aç</span>
       </button>
-      <Dialog open={open} onOpenChange={setOpen} variant="sheet" title={header} className="bg-surface">
+      <Dialog open={open} onOpenChange={setOpen} variant="sheet" title={header} className="mn-shell-bg">
         <SidebarNav area={area} permissions={permissions} features={features} onNavigate={() => setOpen(false)} />
       </Dialog>
     </>

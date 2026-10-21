@@ -1,9 +1,10 @@
 "use client";
 
-import { ChevronsUpDown, LogOut } from "lucide-react";
+import { ChevronDown, LogOut } from "lucide-react";
 import { logoutAction } from "@/server/actions/auth.actions";
 import { Dropdown, DropdownItem, DropdownLabel, DropdownSeparator } from "@/components/ui/dropdown";
 
+/** Hesap menüsü: cam hap — marka geçişli yuvarlak avatar, ad + rol, açılır ok. */
 export function UserMenu({ name, email, roleLabel }: { name: string; email: string; roleLabel: string }) {
   const initials = name
     .split(/\s+/)
@@ -15,17 +16,17 @@ export function UserMenu({ name, email, roleLabel }: { name: string; email: stri
   return (
     <Dropdown
       triggerLabel={`Hesap menüsü: ${name}`}
-      triggerClassName="flex h-11 items-center gap-2.5 rounded-md px-1.5 text-left hover:bg-surface-2 sm:pr-2.5"
+      triggerClassName="group flex h-11 shrink-0 items-center gap-2.5 rounded-full border border-white/80 bg-white/70 py-1 pl-1 pr-1 text-left shadow-[0_6px_18px_-12px_rgb(124_45_18/0.35)] transition-colors hover:bg-white sm:pr-3"
       trigger={
         <>
-          <span aria-hidden="true" className="inline-flex size-8 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-fg">
+          <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-full bg-[linear-gradient(135deg,#ea580c,#dc2626)] text-xs font-bold text-white shadow-[0_4px_12px_-4px_rgb(220_38_38/0.6)]">
             {initials}
           </span>
-          <span className="hidden min-w-0 flex-col sm:flex">
-            <span className="truncate text-sm font-medium leading-tight text-fg">{name}</span>
-            <span className="truncate text-xs leading-tight text-fg-subtle">{roleLabel}</span>
+          <span className="hidden min-w-0 max-w-[12rem] flex-col sm:flex">
+            <span className="truncate text-sm font-semibold leading-tight text-stone-900">{name}</span>
+            <span className="truncate text-xs leading-tight text-stone-500">{roleLabel}</span>
           </span>
-          <ChevronsUpDown aria-hidden="true" className="hidden size-4 text-fg-subtle sm:block" />
+          <ChevronDown aria-hidden="true" className="hidden size-4 text-stone-400 transition-transform group-aria-expanded:rotate-180 sm:block" />
         </>
       }
     >

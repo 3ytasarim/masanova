@@ -6,16 +6,18 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "accent" | "dang
 export type ButtonSize = "sm" | "md" | "lg" | "icon";
 
 const base =
-  "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium " +
+  "inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-xl font-medium " +
   "transition-[background-color,border-color,color,box-shadow,transform] duration-(--duration-fast) ease-(--ease-out-expo) " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring active:translate-y-px " +
   "disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 " +
   "[&_svg]:size-4 [&_svg]:shrink-0";
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "bg-primary text-primary-fg shadow-xs hover:bg-primary-hover",
-  secondary: "border border-border-strong bg-bg text-fg shadow-xs hover:border-fg-subtle/40 hover:bg-surface",
-  ghost: "text-fg-muted hover:bg-surface-2 hover:text-fg",
+  // Site renkleri: turuncu → kırmızı geçiş (giriş ekranı ve panel cam tasarımıyla aynı)
+  primary:
+    "bg-[linear-gradient(135deg,#ea580c,#dc2626)] text-white shadow-[0_8px_18px_-10px_rgb(220_38_38/0.7)] hover:brightness-105 hover:shadow-[0_12px_24px_-10px_rgb(220_38_38/0.75)]",
+  secondary: "border border-stone-900/10 bg-white/80 text-stone-800 shadow-xs backdrop-blur hover:border-stone-900/20 hover:bg-white",
+  ghost: "text-fg-muted hover:bg-white/70 hover:text-fg",
   accent: "bg-accent text-white shadow-xs hover:bg-accent-strong",
   danger: "bg-danger text-white shadow-xs hover:bg-danger/90",
 };

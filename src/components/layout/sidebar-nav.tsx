@@ -27,7 +27,7 @@ export function SidebarNav({
 
   return (
     <nav aria-label={area === "admin" ? "Yönetim menüsü" : "Panel menüsü"}>
-      <ul className="flex flex-col gap-0.5">
+      <ul className="flex flex-col gap-1">
         {items.map(({ item, state }) => {
           const href = navHref(area, item);
           const active = item.segment ? pathname === href || pathname.startsWith(`${href}/`) : pathname === href;
@@ -40,14 +40,25 @@ export function SidebarNav({
                 aria-current={active ? "page" : undefined}
                 data-nav-state={state}
                 className={cn(
-                  "group flex min-h-10 items-center gap-3 rounded-md px-2.5 text-sm font-medium transition-colors duration-(--duration-fast)",
-                  active ? "bg-bg text-fg shadow-xs ring-1 ring-border" : "text-fg-muted hover:bg-surface-2 hover:text-fg",
+                  "group relative flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-[background-color,color,box-shadow,transform] duration-200",
+                  active
+                    ? "bg-white text-stone-900 shadow-[inset_0_1px_0_rgb(255_255_255),0_8px_20px_-12px_rgb(124_45_18/0.45)] ring-1 ring-white"
+                    : "text-stone-600 hover:-translate-y-px hover:bg-white/60 hover:text-stone-900",
                 )}
               >
-                <Icon aria-hidden="true" className={cn("size-4 shrink-0", active ? "text-accent-strong" : "text-fg-subtle group-hover:text-fg-muted")} />
+                {active ? <span aria-hidden="true" className="absolute -left-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-[linear-gradient(180deg,#f97316,#dc2626)] shadow-[0_0_10px_rgb(249_115_22/0.7)]" /> : null}
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "grid size-8 shrink-0 place-items-center rounded-lg transition-colors",
+                    active ? "bg-[linear-gradient(135deg,#ea580c,#dc2626)] text-white shadow-[0_6px_14px_-6px_rgb(220_38_38/0.6)]" : "bg-white/50 text-stone-500 group-hover:bg-white group-hover:text-orange-600",
+                  )}
+                >
+                  <Icon className="size-4" />
+                </span>
                 <span className="truncate">{item.label}</span>
                 {state === "locked" && item.feature ? (
-                  <span className="ml-auto shrink-0 rounded-sm bg-surface-3 px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-fg-subtle" data-testid="nav-plan-badge">
+                  <span className="ml-auto shrink-0 rounded-full bg-stone-900/5 px-2 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-fg-subtle" data-testid="nav-plan-badge">
                     <span className="sr-only">Kilitli — </span>
                     {PLANS[minimumPlanFor(item.feature)].label}
                   </span>
