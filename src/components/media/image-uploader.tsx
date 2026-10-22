@@ -45,6 +45,14 @@ export function ImageUploader({ kind, fields, removeBody, currentUrl, label, dis
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  // Kayıtlı görsel dosyası açılamazsa (ör. depolamada yok) kırık simge yerine yükleme kutusu gösterilir.
+  const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  // Hidrasyondan ÖNCE hata veren görselde onError kaçar: yüklenmiş ama boyutsuz görsel de "bulunamadı" sayılır.
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth === 0) setBrokenUrl(img.getAttribute("src"));
+  }, [currentUrl, localPreview]);
   const rule = MEDIA_RULES[kind];
   const busy = phase.kind === "uploading" || phase.kind === "processing";
 
@@ -170,6 +178,7 @@ export function ImageUploader({ kind, fields, removeBody, currentUrl, label, dis
   }
 
   const preview = localPreview ?? currentUrl;
+  const previewBroken = !!preview && brokenUrl === preview;
   return (
     <div className={cn("grid gap-2", className)} data-testid={testId}>
       <span className="text-sm font-medium text-fg">{label}</span>
@@ -190,13 +199,14 @@ export function ImageUploader({ kind, fields, removeBody, currentUrl, label, dis
         )}
       >
         {input}
-        {preview ? (
-          <img src={preview} alt="" data-testid={`${testId}-preview`} className={cn("absolute inset-0 size-full", kind === "LOGO" ? "object-contain p-3" : "object-cover")} />
+        {preview && !previewBroken ? (
+          <img ref={imgRef} src={preview} alt="" onError={() => setBrokenUrl(preview)} data-testid={`${testId}-preview`} className={cn("absolute inset-0 size-full", kind === "LOGO" ? "object-contain p-3" : "object-cover")} />
         ) : (
-          <span className="flex flex-col items-center gap-1.5 px-3 text-sm text-fg-muted">
+          <span className="flex flex-col items-center gap-1.5 px-3 text-sm text-fg-muted" data-testid={previewBroken ? `${testId}-missing` : undefined}>
             <UploadCloud aria-hidden="true" className="size-6" />
+            {previewBroken ? <span className="text-xs text-warning">Kayıtlı görsel bulunamadı</span> : null}
             <span>
-              <span className="font-medium text-fg">Bilgisayardan seçin</span>
+              <span className="font-medium text-fg">{previewBroken ? "Yeniden yükleyin" : "Bilgisayardan seçin"}</span>
               <span className="hidden sm:inline"> ya da sürükleyip bırakın</span>
             </span>
           </span>

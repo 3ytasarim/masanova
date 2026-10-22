@@ -135,7 +135,12 @@ export function ThemeEditor({ view, initial, readOnly, media }: { view: PublicMe
                   disabled={readOnly || !media.canUpload}
                 />
               </div>
-              {/* Geriye uyumluluk: harici https adresi yalnızca yüklenmiş görsel YOKSA kullanılır. */}
+              {/* Asıl yol dosya yüklemek. Harici https adresi (geriye uyumluluk) yalnızca yüklenmiş görsel YOKSA kullanılır ve
+                  "Bağlantıyla ekle" altında durur; zaten bir adres girilmişse açık gelir. */}
+              {media.logoManaged && media.heroManaged ? null : (
+              <details className="group rounded-xl border border-stone-900/[0.06] bg-white/40 px-4 py-3" open={!!(state.logoUrl || state.heroImageUrl)}>
+                <summary className="cursor-pointer text-sm font-medium text-stone-600 marker:text-stone-400">Bağlantıyla ekle (isteğe bağlı)</summary>
+                <div className="mt-3 grid gap-4">
               {media.logoManaged ? (
                 <input type="hidden" name="logoUrl" value="" />
               ) : (
@@ -150,6 +155,15 @@ export function ThemeEditor({ view, initial, readOnly, media }: { view: PublicMe
                   <Input id="theme-hero" name="heroImageUrl" type="url" value={state.heroImageUrl} onChange={(e) => set("heroImageUrl", e.target.value)} aria-describedby={describedBy("theme-hero", { hint: true, error: err("heroImageUrl") })} />
                 </Field>
               )}
+                </div>
+              </details>
+              )}
+              {media.logoManaged && media.heroManaged ? (
+                <>
+                  <input type="hidden" name="logoUrl" value="" />
+                  <input type="hidden" name="heroImageUrl" value="" />
+                </>
+              ) : null}
               <Field id="theme-welcome" label="Karşılama metni" error={err("welcomeText")} hint={`${state.welcomeText.length} / ${WELCOME_MAX} — düz metin`}>
                 <Textarea id="theme-welcome" name="welcomeText" rows={2} maxLength={WELCOME_MAX} value={state.welcomeText} onChange={(e) => set("welcomeText", e.target.value)} aria-describedby={describedBy("theme-welcome", { hint: true, error: err("welcomeText") })} />
               </Field>

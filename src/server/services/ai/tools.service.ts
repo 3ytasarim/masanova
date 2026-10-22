@@ -7,6 +7,8 @@ import { allergenStatus, flattenMenu, fold, hasDietaryTag, searchProducts, type 
 import { buildLexicon, resolveSpokenProduct, type VoiceLexicon } from "@/lib/ai/voice-lexicon";
 import { recommend } from "@/lib/ai/recommendation";
 import { buildGuidance, detectCondition, planMealByCalories, type KnowledgeDocument } from "@/lib/ai/knowledge";
+import { findPairings, menuMainsFor, nonAlcoholicDrinks, pairingViews, withPopular, type PairingView, type StoredPairing } from "@/lib/ai/pairings";
+import { coOrderedWith } from "@/server/services/ai/co-orders.service";
 import { isAiToolName, parseToolArgs, type AiToolName } from "@/lib/ai/tools";
 import type { ActionCard, ProductCard, RecommendationBundle } from "@/lib/ai/types";
 import type { ItemSelection } from "@/lib/orders/calculate";
@@ -36,6 +38,8 @@ export type ToolContext = {
   context?: ConversationContext;
   /** Platform eğitim kartları (Super Admin › Yapay Zeka Eğit). Verilmezse yerleşik varsayılanlar. */
   knowledge?: KnowledgeDocument[];
+  /** İşletmenin yemek eşleştirmeleri (AiSettings.pairings; ürün anahtarları). */
+  pairings?: StoredPairing[];
 };
 
 export type ToolCollector = { actions: ActionCard[]; products: ProductCard[]; recommendation: RecommendationBundle | null; toolCalls: { name: string; ok: boolean }[] };
@@ -144,6 +148,40 @@ export function createToolExecutor(ctx: ToolContext) {
         const a = parseToolArgs(name, raw);
         if (!a) return { tool: name, ok: false, error: "invalid_arguments" } as unknown as ToolResult;
         return { tool: name, ok: true, guidance: buildGuidance(products, ctx.knowledge ?? [], a.topic, { kind: a.kind, query: a.query }) };
+      }
+      case "getPairings": {
+        if (!ctx.settings.allowRecommendations) return { tool: name, ok: false, reason: "disabled" };
+        const a = parseToolArgs(name, raw);
+        if (!a) return { tool: name, ok: false, error: "invalid_arguments" } as unknown as ToolResult;
+        const lx = (lexicon ??= buildLexicon(products));
+        const avoidAlcohol = a.avoidAlcohol === true;
+        // 1) Restoranın kayıtlı (elle / yapay zekâyla hazırlanmış) eşleştirmeleri
+        const stored = pairingViews(ctx.pairings ?? [], products, { avoidAlcohol });
+        let picked = stored.length ? findPairings(stored, products, lx, a) : { match: "all" as const, pairings: [] as PairingView[] };
+        // 2) Kayıtlı eşleştirme yoksa: sorulan yemek / konu için menüdeki ana yemekler (yalnızca sipariş geçmişiyle doldurulur)
+        if (!stored.length || picked.match === "all") {
+          const mains = menuMainsFor(products, lx, a);
+          if (mains.length && !stored.some((v) => mains.some((m) => m.key === v.mainKey)))
+            picked = { match: "topic", pairings: mains.map((m) => ({ mainKey: m.key, main: m.name, category: m.categoryName, price: m.priceLabel, sides: [], drinks: [], desserts: [] })) };
+        }
+        // 3) Müşteri davranışı: bu yemeklerle aynı siparişte en sık istenenler (son 180 gün, en az 2 sipariş)
+        let withData = picked.pairings;
+        try {
+          withData = withPopular(picked.pairings, await coOrderedWith(ctx.order.tenantId, picked.pairings.map((v) => v.mainKey)), products, { avoidAlcohol });
+        } catch {
+          // Sipariş istatistiği isteğe bağlı: okunamazsa kayıtlı eşleştirmeler yeterli.
+        }
+        const useful = withData.filter((v) => v.sides.length || v.drinks.length || v.desserts.length || v.popular?.length);
+        const softDrinks = avoidAlcohol ? nonAlcoholicDrinks(products) : undefined;
+        if (!useful.length) return { tool: name, ok: true, match: "none", pairings: [], ...(softDrinks ? { nonAlcoholicDrinks: softDrinks } : {}), note: "Restoranın tanımlı eşleştirmesi ve yeterli sipariş verisi yok; menüden kendi gastronomik önerini yap." };
+        return {
+          tool: name,
+          ok: true,
+          match: picked.match,
+          pairings: useful,
+          ...(softDrinks ? { nonAlcoholicDrinks: softDrinks } : {}),
+          note: "sides / drinks / desserts = restoranın önerisi; nonAlcoholicDrinks = alkolsüz içecek önerirken YALNIZCA bunlardan, adını aynen söyle; popular = misafirlerin bu yemekle en çok birlikte sipariş ettikleri (gerçek sipariş verisi). Doğal bir cümleyle, önce yemek, sonra meze ve içecek, sorulursa tatlı sırasıyla söyle.",
+        };
       }
       case "planMealByCalories": {
         if (!ctx.settings.allowRecommendations) return { tool: name, ok: false, reason: "disabled" };

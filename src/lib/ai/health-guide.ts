@@ -128,6 +128,12 @@ const GENERAL_TIPS: Record<HealthCondition, string[]> = {
 
 export const HEALTH_DISCLAIMER = "Genel beslenme bilgisidir; doktorunuzun / diyetisyeninizin önerisi önceliklidir. İçerikler restoranın girdiği bilgiye ve genel tariflere dayanır.";
 
+/** Alkollü içecek mi? (diyabet / hamilelik / "alkol almıyorum" tercihinde eşleştirmelerden çıkarılır) */
+export function isAlcoholicProduct(p: FlatProduct): boolean {
+  const t = fold(`${p.name} ${p.categoryName} ${p.shortDescription ?? ""}`);
+  return p.kind === "drink" && isAlcohol(t, fold(p.categoryName));
+}
+
 export function classifyForHealth(p: FlatProduct, condition: HealthCondition): HealthVerdict {
   const text = fold([p.name, p.categoryName, p.shortDescription ?? "", p.description ?? "", ...p.ingredients].join(" "));
   return CLASSIFIERS[condition](p, text, fold(p.categoryName));

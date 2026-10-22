@@ -1475,6 +1475,9 @@ model AiSettings {
   voiceEnabled         Boolean  @default(true) @map("voice_enabled")
   /// null → işletmenin varsayılan dili.
   defaultVoiceLanguage String?  @map("default_voice_language")
+  /// İşletmenin yemek eşleştirmeleri: [{ main, sides[], drinks[] }] — ürün anahtarları (slug). Sesli / yazılı garson
+  /// "yanına ne gider?" sorularında önce bunu söyler (getPairings).
+  pairings             Json?
   createdAt            DateTime @default(now()) @map("created_at")
   updatedAt            DateTime @updatedAt @map("updated_at")
 

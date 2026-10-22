@@ -19,6 +19,7 @@ const S = (gate: Feature, where: string): Policy => ({ gate, where });
 const ACTIONS: Record<string, Record<string, Policy>> = {
   "advisor.actions": { refreshAdvisorAction: S("business_advisor", "src/server/services/advisor/advisor.service.ts"), dismissInsightAction: S("business_advisor", "src/server/services/advisor/advisor.service.ts"), insightFeedbackAction: S("business_advisor", "src/server/services/advisor/advisor.service.ts") },
   "ai.actions": { saveAiSettingsAction: S("voice_ai", "src/server/services/ai/settings.service.ts") },
+  "pairings.actions": { savePairingsAction: A("voice_ai"), generatePairingsAction: A("voice_ai") },
   "voice-index.actions": { buildVoiceIndexAction: A("voice_ai"), testVoiceMatchAction: A("voice_ai") },
   "auth.actions": { loginAction: "all_plans", logoutAction: "all_plans" },
   "campaign.actions": { saveCouponAction: A("promotions"), couponStatusAction: A("promotions"), saveRewardAction: A("promotions"), rewardStateAction: A("promotions"), saveCampaignAction: A("promotions"), campaignStatusAction: A("promotions") },

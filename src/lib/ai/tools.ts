@@ -47,6 +47,15 @@ export const AI_TOOLS = {
       query: z.string().trim().max(60).optional().describe("Belirli bir istek (ör. kebap, balık)"),
     }),
   },
+  getPairings: {
+    description:
+      "Restoranın KENDİ yemek eşleştirmeleri: müşteri bir yemeğin yanına ne gideceğini, hangi meze / içecek / rakı / şarap önerdiğinizi sorarsa ÖNCE bunu çağır (ör. 'balığın yanına hangi meze gider', 'levreğin yanına ne içilir'). Ürün ya da konu (balık, kebap …) verilebilir.",
+    schema: z.object({
+      product: z.string().trim().max(80).optional().describe("Müşterinin söylediği ana yemek (ör. levrek ızgara)"),
+      topic: z.string().trim().max(60).optional().describe("Genel konu (ör. balık, et, rakı, tatlı)"),
+      avoidAlcohol: z.boolean().optional().describe("Müşteri alkol almıyorsa, diyabet ya da hamilelik söylediyse true: alkollü içecekler çıkarılır"),
+    }),
+  },
   planMealByCalories: {
     description:
       "Kalori hedefiyle öğün kur: müşteri bir kalori sınırı söylerse ya da eğitim bilgisi kalori sınırı öneriyorsa ÇAĞIR. Yalnızca menüde kalorisi girilmiş ürünlerle ana yemek + yan + kalorisiz içecek planları ve toplam kaloriyi döndürür (tahmin yok).",
@@ -92,7 +101,7 @@ export function isAiToolName(value: string): value is AiToolName {
 /** İşletme ayarına ve PAKETE göre etkin araçlar (öneri / sepet / servis kapatılabilir; Sesli Menü paketinde sepet yok). */
 export function enabledTools(settings: { allowRecommendations: boolean; allowCartActions: boolean; allowServiceActions: boolean }, capabilities: { ordering: boolean; service: boolean } = { ordering: true, service: true }): AiToolName[] {
   return AI_TOOL_NAMES.filter((n) => {
-    if (n === "getRecommendationCandidates" || n === "getGuidance" || n === "planMealByCalories") return settings.allowRecommendations;
+    if (n === "getRecommendationCandidates" || n === "getGuidance" || n === "planMealByCalories" || n === "getPairings") return settings.allowRecommendations;
     if (n === "prepareCartAddition" || n === "prepareCartChange" || n === "openCartReview") return settings.allowCartActions && capabilities.ordering;
     if (n === "prepareServiceRequest") return settings.allowServiceActions && capabilities.service;
     return true;

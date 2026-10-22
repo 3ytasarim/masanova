@@ -22,6 +22,7 @@ export const DEFAULT_AI_SETTINGS = {
   allowServiceActions: true,
   voiceEnabled: true,
   defaultVoiceLanguage: null,
+  pairings: null,
 } as const satisfies Omit<AiSettings, "id" | "tenantId" | "createdAt" | "updatedAt">;
 
 export type EffectiveAiSettings = Omit<AiSettings, "id" | "tenantId" | "createdAt" | "updatedAt">;

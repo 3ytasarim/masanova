@@ -10,6 +10,7 @@ export function AiTabs({ voice, advisor }: { voice: boolean; advisor: boolean })
   const tabs = [
     ...(voice ? [{ href: "/panel/ai", label: "Sesli Asistan", active: pathname === "/panel/ai" }] : []),
     ...(voice ? [{ href: "/panel/ai/menu-egitimi", label: "Menü Eğitimi", active: pathname.startsWith("/panel/ai/menu-egitimi") }] : []),
+    ...(voice ? [{ href: "/panel/ai/eslestirmeler", label: "Eşleştirmeler", active: pathname.startsWith("/panel/ai/eslestirmeler") }] : []),
     ...(advisor ? [{ href: "/panel/ai/danisman", label: "İşletme Danışmanı", active: pathname.startsWith("/panel/ai/danisman") }] : []),
   ];
   if (tabs.length < 2) return null;

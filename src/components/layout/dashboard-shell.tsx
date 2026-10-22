@@ -9,6 +9,7 @@ import { Logo } from "@/components/layout/logo";
 import { MobileNav } from "@/components/layout/mobile-nav";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { UserMenu } from "@/components/layout/user-menu";
+import { ContextBadge } from "@/components/layout/context-badge";
 
 /**
  * Admin ve restoran paneli ortak kabuğu — açık "cam" tasarım (site renkleri: turuncu → kırmızı).
@@ -104,26 +105,5 @@ export function DashboardShell({
         </main>
       </div>
     </div>
-  );
-}
-
-/** İşletme logosu; yoksa marka geçişli baş harf rozeti. */
-function ContextBadge({ src, label, small = false }: { src?: string | null; label: string; small?: boolean }) {
-  const size = small ? "size-8" : "size-10";
-  if (src)
-    return (
-      // eslint-disable-next-line @next/next/no-img-element -- işletme logosu (yüklenen /media ya da harici https); sabit boyut
-      <img src={src} alt="" width={40} height={40} referrerPolicy="no-referrer" data-testid="panel-logo" className={`${size} shrink-0 rounded-xl bg-white object-contain p-0.5 ring-1 ring-stone-200/70`} />
-    );
-  const initials = label
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toLocaleUpperCase("tr-TR");
-  return (
-    <span aria-hidden="true" className={`${size} grid shrink-0 place-items-center rounded-xl bg-[linear-gradient(135deg,#ea580c,#dc2626)] text-xs font-bold text-white shadow-[0_6px_14px_-6px_rgb(220_38_38/0.6)]`}>
-      {initials}
-    </span>
   );
 }

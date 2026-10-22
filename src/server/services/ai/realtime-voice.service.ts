@@ -1,4 +1,5 @@
 import "server-only";
+import { readStoredPairings } from "@/lib/ai/pairings";
 import { knowledgeIndex } from "@/lib/ai/knowledge";
 import { getActiveKnowledge } from "@/server/services/ai/knowledge.service";
 import { isMenuLocale } from "@/config/menu";
@@ -189,6 +190,7 @@ export async function runRealtimeTool(
     recentOrders: input.recentOrders,
     context: parseContext(conversation.context) as ConversationContext,
     knowledge: await getActiveKnowledge(),
+    pairings: readStoredPairings(settings.pairings),
   });
   const money = (minor: number) => formatMoney(minor, executor.products[0]?.currency ?? "TRY", NUMBER_LOCALES[language]);
   // Ürün adı çözümü YALNIZCA sesli menü sözlüğüyle (canlı menü + doğrulanmış söyleyişler); model ad çözmez.
@@ -224,6 +226,7 @@ export async function runRealtimeTool(
     case "getRecommendationCandidates":
     case "getGuidance":
     case "planMealByCalories":
+    case "getPairings":
     case "getOrderStatus": {
       // getProductDetails: konuşulan ad (çizburger) menü adına çevrilir.
       let args = input.args;

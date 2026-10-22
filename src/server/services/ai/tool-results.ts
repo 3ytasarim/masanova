@@ -1,5 +1,6 @@
 import type { OrderStatus, ServiceRequestType } from "@prisma/client";
 import type { CaloriePlanResult, Guidance } from "@/lib/ai/knowledge";
+import type { PairingView } from "@/lib/ai/pairings";
 
 /**
  * Araç sonuçları (modele / kural tabanlı asistana giden müşteri-güvenli DTO). İç kimlik, kiracı / şube / masa, SKU,
@@ -50,6 +51,8 @@ export type ToolResult =
   | { tool: "getRecommendationCandidates"; ok: false; reason: "disabled" }
   | { tool: "getGuidance"; ok: true; guidance: Guidance }
   | { tool: "getGuidance"; ok: false; reason: "disabled" }
+  | { tool: "getPairings"; ok: true; match: "product" | "topic" | "all" | "none"; pairings: PairingView[]; nonAlcoholicDrinks?: { name: string; price: string }[]; note: string }
+  | { tool: "getPairings"; ok: false; reason: "disabled" }
   | { tool: "planMealByCalories"; ok: true; result: CaloriePlanResult }
   | { tool: "planMealByCalories"; ok: false; reason: "disabled" }
   | { tool: "getCartSummary"; ok: true; lines: { name: string; quantity: number; lineTotalLabel: string; status: string }[]; totalLabel: string }

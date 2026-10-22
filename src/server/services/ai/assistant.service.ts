@@ -1,4 +1,5 @@
 import "server-only";
+import { readStoredPairings } from "@/lib/ai/pairings";
 import { knowledgeIndex } from "@/lib/ai/knowledge";
 import { getActiveKnowledge } from "@/server/services/ai/knowledge.service";
 import { resolveEntitlements } from "@/server/billing/entitlements";
@@ -211,6 +212,7 @@ export async function generateReply(
     recentOrders: input.recentOrders,
     context: context as ConversationContext,
     knowledge,
+    pairings: readStoredPairings(settings.pairings),
   });
   const summary = contextSummary(context);
   const request = {
