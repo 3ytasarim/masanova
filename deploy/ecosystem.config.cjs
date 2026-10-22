@@ -20,8 +20,9 @@ const LOG_DIR = process.env.MASANOVA_LOG_DIR || "/var/log/masanova";
 
 const shared = {
   cwd: APP_DIR,
-  script: "node_modules/next/dist/bin/next",
-  args: "start -p 3000",
+  // server.mjs: soket yalnızca BIND_HOST'a (127.0.0.1), Next'e iç ad "localhost" — `next start -H 127.0.0.1` kiracı
+  // rewrite'ını dış proxy sanıp EPROTO / 500 üretir (Next issue #94745; ayrıntı server.mjs başında).
+  script: "server.mjs",
   // Sinyali uygulama yönetir: SSE → canlı ses turları → Redis → Prisma kapanır, sonra çıkış.
   kill_timeout: 10000,
   listen_timeout: 20000,
@@ -35,6 +36,9 @@ const shared = {
     NODE_ENV: "production",
     APP_ENV: "production",
     NEXT_MANUAL_SIG_HANDLE: "true",
+    // nginx upstream'iyle aynı olmalı (ör. 127.0.0.1:5022 → PORT=5022).
+    PORT: process.env.PORT || "3000",
+    BIND_HOST: process.env.BIND_HOST || "127.0.0.1",
   },
 };
 

@@ -14,7 +14,7 @@ Bu belge ilk üretim dağıtımı ve sonraki sürümler içindir. Canlı sunucud
                                    │ 127.0.0.1:3000
                        ┌───────────▼────────────┐
                        │ Node 24 · Next 16       │  PM2: tek süreç (önerilen başlangıç) ya da küme (2–4)
-                       │ next start (APP_ENV=    │  /api/health · /api/ready
+                       │ server.mjs (APP_ENV=    │  /api/health · /api/ready
                        │ production)             │
                        └──┬──────┬──────┬───────┘
                           │      │      │
@@ -150,6 +150,13 @@ curl -fsS https://masanovai.com/api/ready && npm run smoke -- --base https://mas
 ## 7. PM2 ve veritabanı bağlantıları
 
 `deploy/ecosystem.config.cjs`: `masanova` (fork, 1) ya da `masanova-cluster` (`PM2_INSTANCES`, varsayılan 2).
+
+- **Başlatıcı `server.mjs`'dir, `next start -H 127.0.0.1` KULLANMAYIN.** Next 16.4'te `-H 127.0.0.1` ile proxy rewrite'ı
+  (kiracı alt alan adı → `/site`) dış adres sayılır; nginx `X-Forwarded-Proto: https` gönderdiğinde Next kendi düz HTTP
+  portuna TLS ile bağlanmaya çalışır → `Failed to proxy https://localhost:<port>/site … EPROTO` → kiracı sayfaları 500
+  ([next.js#94745](https://github.com/vercel/next.js/issues/94745)). `server.mjs` soketi yalnızca `BIND_HOST`'a
+  (varsayılan `127.0.0.1`) bağlar, Next'e iç ad olarak `localhost` verir. Ortam: `PORT` nginx upstream portuyla aynı
+  olmalı (ör. `127.0.0.1:5022` → `PORT=5022`). Doğrulama: `node tests/e2e/e2e-proxy-host.cjs` (salt okunur).
 
 - **Küme > 1 ise `REDIS_URL` zorunlu** — yoksa uygulama üretimde açılmaz (gerçek zamanlı olaylar ve hız sınırları süreçler
   arası paylaşılmaz).
