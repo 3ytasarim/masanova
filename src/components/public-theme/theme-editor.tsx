@@ -200,7 +200,7 @@ export function ThemeEditor({ view, initial, readOnly, media }: { view: PublicMe
           <span className="text-fg-subtle">{view.branch?.name ?? "Şube yok"}</span>
         </div>
         <div className="mx-auto w-full max-w-[24.5rem] rounded-[2.75rem] bg-stone-900 p-2.5 shadow-xl">
-          <div ref={frameRef} data-testid="theme-preview" className="relative h-[46rem] max-h-[75dvh] overflow-y-auto overscroll-contain rounded-[2.25rem] bg-[#faf8f5] [scrollbar-width:thin]">
+          <div ref={frameRef} data-testid="theme-preview" className="relative h-[46rem] max-h-[75dvh] overflow-y-auto overscroll-contain rounded-[2.25rem] bg-[#faf8f5] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <PublicMenu view={preview} preview scrollRoot={frameRef} />
           </div>
         </div>

@@ -169,7 +169,8 @@ export function PublicMenu({
   useEffect(() => {
     const hero = heroRef.current;
     if (!hero) return;
-    const io = new IntersectionObserver(([entry]) => setCompact(!entry!.isIntersecting), { root: scrollRoot?.current ?? null, threshold: 0, rootMargin: "-56px 0px 0px 0px" });
+    // Kapağın çoğu (≥ %65) görünmez olunca: kısa kapakta birkaç piksel kaydırmada iki başlık birden görünmez.
+    const io = new IntersectionObserver(([entry]) => setCompact(!entry!.isIntersecting || entry!.intersectionRatio < 0.35), { root: scrollRoot?.current ?? null, threshold: [0, 0.35] });
     io.observe(hero);
     return () => io.disconnect();
   }, [scrollRoot]);
@@ -1121,17 +1122,52 @@ function VenueSheet({ open, onClose, view, venue, s }: { open: boolean; onClose:
 function ModernHero({ view, t, heroRef, preview, account }: { view: PublicMenuView; t: PublicStrings; heroRef: React.RefObject<HTMLDivElement | null>; preview: boolean; account: PublicAccount | null }) {
   const { theme } = view;
   const [logoMissing, setLogoMissing] = useState(false);
+  // Kapak dosyası açılamazsa (silinmiş / taşınmış) kırık görsel yerine sade başlık; hidrasyondan önceki hata da yakalanır.
+  const [heroMissing, setHeroMissing] = useState(false);
+  const heroImgRef = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    const img = heroImgRef.current;
+    if (img && img.complete && img.naturalWidth === 0) setHeroMissing(true);
+  }, [theme.heroImageUrl]);
+  const showBanner = !!theme.heroImageUrl && !heroMissing;
   const monogram = view.restaurant.name.trim().slice(0, 1).toLocaleUpperCase(view.locale === "tr" ? "tr-TR" : undefined);
   return (
     <>
-      {theme.heroImageUrl ? (
+      {showBanner ? (
         <div aria-hidden="true" className={cn("pointer-events-none inset-0 -z-10 overflow-hidden", preview ? "absolute" : "fixed")}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={theme.heroImageUrl} alt="" className="size-full scale-110 object-cover opacity-45 blur-[6px]" />
+          <img src={theme.heroImageUrl ?? undefined} alt="" className="size-full scale-110 object-cover opacity-45 blur-[6px]" />
           <div className="absolute inset-0 bg-gradient-to-b from-stone-950/55 via-stone-950/75 to-stone-950/95" />
         </div>
       ) : null}
       <header ref={heroRef} className="relative mx-auto max-w-3xl px-4 pb-1 pt-[max(1rem,env(safe-area-inset-top))]">
+        {showBanner ? (
+          // Kapak görseli koyu düzende de NET bir afiş olarak görünür; kimlik satırı afişin altına bindirilir.
+          <div data-testid="modern-banner" className="relative aspect-[16/9] w-full overflow-hidden rounded-[1.75rem] shadow-[0_20px_40px_-20px_rgb(0_0_0/0.8)] ring-1 ring-white/10 sm:aspect-[21/9]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img ref={heroImgRef} src={theme.heroImageUrl ?? undefined} alt="" onError={() => setHeroMissing(true)} className="absolute inset-0 size-full object-cover" />
+            <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-t from-stone-950/90 via-stone-950/25 to-stone-950/10" />
+            <div className="absolute end-3 top-3 flex flex-col items-end gap-1.5">
+              <TableBadge view={view} t={t} preview={preview} small />
+              <AccountPill account={account} locale={view.locale} />
+            </div>
+            <div className="absolute inset-x-3 bottom-3 flex items-center gap-3">
+              <span className="relative inline-flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-xl font-semibold shadow-lg ring-2 ring-white/30">
+                {theme.logoUrl && !logoMissing ? (
+                  <ProductImage src={theme.logoUrl} alt={view.restaurant.name} priority sizes="48px" className="object-contain p-1" onMissing={() => setLogoMissing(true)} />
+                ) : (
+                  <span aria-hidden="true" className="flex size-full items-center justify-center" style={{ backgroundColor: "var(--pm-brand)", color: "var(--pm-on-brand)" }}>
+                    {monogram}
+                  </span>
+                )}
+              </span>
+              <div className="min-w-0 flex-1 drop-shadow-[0_1px_6px_rgb(0_0_0/0.6)]">
+                <h1 className="truncate text-[1.375rem] font-bold leading-tight tracking-tight text-white">{view.restaurant.name}</h1>
+                {theme.welcomeText ? <p className="line-clamp-2 text-[0.8125rem] text-stone-200">{theme.welcomeText}</p> : view.branch ? <p className="truncate text-[0.8125rem] text-stone-200">{view.branch.name}</p> : null}
+              </div>
+            </div>
+          </div>
+        ) : (
         <div className="flex items-center gap-3">
           <span className="relative inline-flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white text-xl font-semibold shadow-lg ring-2 ring-white/20">
             {theme.logoUrl && !logoMissing ? (
@@ -1151,6 +1187,7 @@ function ModernHero({ view, t, heroRef, preview, account }: { view: PublicMenuVi
             <AccountPill account={account} locale={view.locale} />
           </div>
         </div>
+        )}
       </header>
     </>
   );
