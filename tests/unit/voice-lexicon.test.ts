@@ -204,3 +204,46 @@ describe("ortak kelimeli ürünler — söylenen ayırt edici kelime kazanır", 
     expect(top("buğulama")).toMatch(/^ambiguous:/);
   });
 });
+
+describe("çok dilli menü (misafir başka dilde konuşuyor)", () => {
+  const en: FlatProduct[] = [
+    P("cipura-izgara", "Grilled Gilthead Sea Bream", "Fish"),
+    P("cipura-bugulama", "Steamed Gilthead Sea Bream", "Fish"),
+    P("levrek-izgara", "Grilled Sea Bass", "Fish"),
+    P("levrek-marin", "Marinated Sea Bass", "Starters"),
+    P("yaprak-sarma", "Yaprak Sarma (Stuffed Vine Leaves)", "Starters"),
+    P("midye", "Stuffed Mussels", "Starters"),
+    P("midye-duble", "Double Stuffed Mussels", "Starters"),
+  ];
+  const trNames: Record<string, string[]> = {
+    "cipura-izgara": ["Çipura Izgara"],
+    "cipura-bugulama": ["Çipura Buğulama"],
+    "levrek-izgara": ["Levrek Izgara"],
+    "levrek-marin": ["Levrek Marin"],
+    "yaprak-sarma": ["Yaprak Sarma"],
+    "midye": ["Midye Dolma"],
+    "midye-duble": ["Duble Midye Dolma"],
+  };
+  const lx = buildLexicon(en, {}, trNames);
+  const m = (s: string) => {
+    const r = matchProduct(lx, s);
+    return { status: r.status, name: "product" in r ? r.product.name : null, options: r.candidates.map((c) => c.name) };
+  };
+
+  it("parantez içi açıklama da ürün adı sayılır", () => {
+    expect(m("stuffed vine leaves")).toMatchObject({ status: "high", name: "Yaprak Sarma (Stuffed Vine Leaves)" });
+  });
+  it("Türkçe adı da tanınır (ürün o dilin adıyla döner)", () => {
+    expect(m("çipura ızgara")).toMatchObject({ status: "high", name: "Grilled Gilthead Sea Bream" });
+    expect(m("levrek").status).toBe("ambiguous");
+  });
+  it("adında olmayan ayırt edici kelime yanlış ürünü öne çıkarmaz (bream ≠ bass)", () => {
+    const r = m("grilled sea bream");
+    expect(r.name).toBe("Grilled Gilthead Sea Bream");
+    expect(m("sea bream").options.sort()).toEqual(["Grilled Gilthead Sea Bream", "Steamed Gilthead Sea Bream"]);
+  });
+  it("ek biçimler ürün sayısını ve çakışmaları şişirmez", () => {
+    expect(lx.stats.products).toBe(en.length);
+    expect(lx.ambiguities.filter((a) => a.kind === "collision")).toEqual([]);
+  });
+});

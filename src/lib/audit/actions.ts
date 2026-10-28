@@ -32,6 +32,7 @@ export const AUDIT_ACTION_LABELS = {
   CATEGORY_STATUS_CHANGED: "Kategori durumu değişti",
   PRODUCT_CREATED: "Ürün oluşturuldu",
   PRODUCT_UPDATED: "Ürün güncellendi",
+  MENU_TRANSLATED: "Menü yapay zekâyla çevrildi",
   PRODUCT_STATUS_CHANGED: "Ürün durumu değişti",
   PRODUCT_SOLD_OUT_CHANGED: "Ürün tükendi durumu değişti",
   PRODUCT_ARCHIVED: "Ürün arşivlendi",

@@ -5,8 +5,9 @@ import { getActiveKnowledge } from "@/server/services/ai/knowledge.service";
 import { isMenuLocale } from "@/config/menu";
 import { parseContext, type ConversationContext } from "@/lib/ai/conversation-context";
 import { isAiLanguage, type AiLanguage } from "@/lib/ai/language";
+import { detectLanguage } from "@/lib/voice/language-detection";
 import { guardAssistantText, sanitizeUserText } from "@/lib/ai/safety";
-import { flattenMenu } from "@/lib/ai/menu-match";
+import { flattenMenu, fold } from "@/lib/ai/menu-match";
 import { heardSupports, isAffirmative, matchProduct, resolveSpokenProduct } from "@/lib/ai/voice-lexicon";
 import { refreshVoiceIndexIfStale, runtimeLexicon } from "@/server/services/ai/voice-index.service";
 import {
@@ -14,10 +15,12 @@ import {
   enabledRealtimeTools,
   greetingInstruction,
   isRealtimeToolName,
+  localizeToolOutput,
   menuOverview,
   parseRealtimeArgs,
   realtimeToolDefinitions,
   resolveSelection,
+  toolLanguage,
 } from "@/lib/ai/realtime-voice";
 import type { CartLinePayload } from "@/lib/ai/types";
 import type { ItemSelection } from "@/lib/orders/calculate";
@@ -63,6 +66,23 @@ async function buildView(ctx: TrustedTableContext, language: string) {
   const locale = isMenuLocale(language) ? language : isMenuLocale(presentation.defaultLocale) ? presentation.defaultLocale : "tr";
   const menu = await getCachedPublishedMenu(ctx.scope, { branchId: ctx.branch.id, locale });
   return toPublicMenuView(menu, presentation, { table: { name: ctx.table.name, area: ctx.area?.name ?? null }, refOf: createMenuRefs(ctx.tenant.id), ordering: null });
+}
+
+/**
+ * Misafirin dilindeki menüde ürünün varsayılan dildeki (Türkçe) adı da tanınsın: "levrek" ya da "sea bass" aynı ürün.
+ * Varsayılan dilde konuşuluyorsa ek terim yok.
+ */
+async function defaultLanguageNames(ctx: TrustedTableContext, view: Awaited<ReturnType<typeof buildView>>): Promise<{ locale?: string; aliases?: Record<string, string>; categories?: Record<string, string> }> {
+  if (view.locale === view.defaultLocale) return {};
+  const localized = new Map(flattenMenu(view).map((p) => [p.key, p.categoryName]));
+  const aliases: Record<string, string> = {};
+  const categories: Record<string, string> = {};
+  for (const p of flattenMenu(await buildView(ctx, view.defaultLocale))) {
+    aliases[p.key] = p.name;
+    const cat = localized.get(p.key);
+    if (cat) categories[fold(p.categoryName)] = cat;
+  }
+  return { locale: view.locale, aliases, categories };
 }
 
 export type MintResult =
@@ -179,9 +199,19 @@ export async function runRealtimeTool(
   const name = input.name;
   if (!isRealtimeToolName(name) || !enabledRealtimeTools(settings, ordering, ent.has("service_requests")).includes(name)) return { ok: true, output: { ok: false, error: "unknown_tool" }, effect: null };
 
-  const view = await buildView(ctx, "tr");
-  const language: AiLanguage = isAiLanguage(conversation.conversationLanguage) ? conversation.conversationLanguage : "tr";
+  // Misafirin dili: son söylediği cümleden (konuşma dili kaydı tur bitince güncellenir; araç tur ortasında çalışır).
+  // Menü o dilde kurulur → araçlar ürün adlarını / açıklamalarını misafirin dilinde döndürür (çeviri yoksa varsayılan dil).
+  const current: AiLanguage = isAiLanguage(conversation.conversationLanguage) ? conversation.conversationLanguage : "tr";
+  const lastUtterance = input.heard?.split(" | ").pop()?.trim() ?? "";
+  // Öncelik: modelin bildirdiği dil (lang) → son cümleden algılama → konuşma kaydı.
+  const language: AiLanguage = toolLanguage(input.args) ?? (lastUtterance ? detectLanguage(lastUtterance, current).language : current);
+  const view = await buildView(ctx, language);
+  // Ürün adı çözümü YALNIZCA sesli menü sözlüğüyle (canlı menü + doğrulanmış söyleyişler + varsayılan dildeki adlar).
+  const alt = await defaultLanguageNames(ctx, view);
+  const lexicon = await runtimeLexicon(ctx.tenant.id, flattenMenu(view), alt);
   const executor = createToolExecutor({
+    lexicon,
+    categoryAliases: alt.categories,
     order: { tenantId: scope.tenantId, branchId: scope.branchId, tableId: scope.tableId, tokenId: ctx.token.id, branchName: ctx.branch.name, tableName: ctx.table.name, areaName: ctx.area?.name ?? null, defaultLocale: view.defaultLocale },
     view,
     numberLocale: NUMBER_LOCALES[language],
@@ -193,10 +223,8 @@ export async function runRealtimeTool(
     pairings: readStoredPairings(settings.pairings),
   });
   const money = (minor: number) => formatMoney(minor, executor.products[0]?.currency ?? "TRY", NUMBER_LOCALES[language]);
-  // Ürün adı çözümü YALNIZCA sesli menü sözlüğüyle (canlı menü + doğrulanmış söyleyişler); model ad çözmez.
-  const lexicon = await runtimeLexicon(ctx.tenant.id, executor.products);
   const resolve = (phrase: string) => resolveSpokenProduct(lexicon, executor.products, phrase);
-  const done = (output: Record<string, unknown>, effect: ToolEffect | null = null): ToolResponse => ({ ok: true, output, effect });
+  const done = (output: Record<string, unknown>, effect: ToolEffect | null = null): ToolResponse => ({ ok: true, output: localizeToolOutput(output, language), effect });
 
   switch (name) {
     case "findMenuItems": {

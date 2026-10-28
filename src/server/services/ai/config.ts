@@ -3,7 +3,7 @@ import { getServerEnv } from "@/lib/env";
 import type { AiProvider } from "@/lib/ai/provider";
 import type { AiLanguage } from "@/lib/voice/language-detection";
 import type { SttProvider, TtsProvider } from "@/lib/voice/provider";
-import { createOpenAiProvider, createOpenAiStt, createOpenAiTts } from "@/server/services/ai/providers/openai";
+import { createOpenAiProvider, createOpenAiStt, createOpenAiTts, openAiJson } from "@/server/services/ai/providers/openai";
 import { createRuleBasedProvider, createMockStt, createMockTts } from "@/server/services/ai/providers/mock";
 import { mocksAllowed } from "@/lib/runtime-profile";
 
@@ -39,6 +39,17 @@ export function voiceFor(language: AiLanguage): string {
   const env = getServerEnv();
   const configured = { tr: env.VOICE_TTS_VOICE_TR, en: env.VOICE_TTS_VOICE_EN, de: env.VOICE_TTS_VOICE_DE, ar: env.VOICE_TTS_VOICE_AR, ru: env.VOICE_TTS_VOICE_RU }[language];
   return configured || DEFAULT_VOICES[language];
+}
+
+/** Toplu JSON işleri (menü çevirisi) — yalnızca gerçek OpenAI; mock / yapılandırılmamışsa null (sahte çeviri YAZILMAZ). */
+export type JsonCompleter = (req: { system: string; user: string; maxTokens: number; timeoutMs?: number; signal?: AbortSignal }) => Promise<{ data: unknown; inputTokens: number; outputTokens: number }>;
+
+export function getJsonCompleter(): { model: string; run: JsonCompleter } | null {
+  const env = getServerEnv();
+  const apiKey = env.AI_API_KEY || "";
+  if (env.AI_PROVIDER !== "openai" || !apiKey) return null;
+  const model = env.AI_MODEL || "gpt-4.1-mini";
+  return { model, run: (req) => openAiJson({ apiKey, model }, req) };
 }
 
 /** Testler için (sağlayıcı ayarlarını değiştirdikten sonra). */

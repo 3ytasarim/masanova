@@ -207,6 +207,11 @@ export type LexiconEntry = {
   terms: LexiconTerm[];
   /** Ad içindeki ayırt edici (genel olmayan) kelimelerin anahtarları — kapsama puanı için. */
   coreKeys: string[];
+  /**
+   * Aynı ürünün başka ad biçimleri (parantez içi açıklama, başka dildeki ad): "Yaprak Sarma (Stuffed Vine Leaves)" →
+   * "Stuffed Vine Leaves"; İngilizce menüde Türkçe "Çipura Izgara". Kapsama puanı en iyi biçimden alınır.
+   */
+  forms?: { coreKeys: string[]; nameKeys: string[] }[];
   variants: LexiconOption[];
   modifiers: (LexiconOption & { group: string; groupRef: string })[];
 };
@@ -224,11 +229,32 @@ const GENERIC_NAMES = new Set(["special", "ozel", "menu", "kampanya", "combo", "
  * Menüden sözlük üret. `extraTerms`: kalıcı dizinde saklanan ek söyleyişler (ör. yapay zekâ ile üretilmiş, doğrulanmış)
  * — ürün anahtarına göre eklenir; menüde olmayan ürün için asla kullanılmaz.
  */
-export function buildLexicon(products: readonly FlatProduct[], extraTerms: Record<string, string[]> = {}): VoiceLexicon {
-  // Kelime sıklığı: birçok üründe geçen kelime (çorbası, kebap, dürüm) ayırt edici değildir.
+/** Parantezli ad → [parantezsiz ad, parantez içi]; parantez yoksa boş (ek biçim yok). */
+function parenForms(name: string): string[] {
+  const inner = [...name.matchAll(/(([^)]+))/g)].map((m) => m[1]!.trim()).filter(Boolean);
+  if (!inner.length) return [];
+  return [name.replace(/([^)]*)/g, " ").replace(/s+/g, " ").trim(), ...inner].filter((f) => f.length >= 2);
+}
+
+export function buildLexicon(products: readonly FlatProduct[], extraTerms: Record<string, string[]> = {}, altNames: Record<string, string[]> = {}): VoiceLexicon {
+  // Ek ad biçimleri: parantez içi + başka dildeki adlar (aynı ürünün; çakışma sayılmaz).
+  const extraForms = products.map((p) => {
+    const all = [...parenForms(p.name), ...(altNames[p.key] ?? []).flatMap((n) => [n, ...parenForms(n)])];
+    const seen = new Set([phoneticKey(p.name)]);
+    return all.filter((f) => {
+      const k = phoneticKey(f);
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  });
+  // Kelime sıklığı: birçok üründe geçen kelime (çorbası, kebap, dürüm) ayırt edici değildir. Ürün başına bir kez sayılır.
   const tokenFreq = new Map<string, number>();
   const productTokens = products.map((p) => [...new Set(tokenize(p.name).map(phoneticToken))]);
-  for (const toks of productTokens) for (const t of toks) tokenFreq.set(t, (tokenFreq.get(t) ?? 0) + 1);
+  products.forEach((p, i) => {
+    const all = new Set([...productTokens[i]!, ...extraForms[i]!.flatMap((f) => tokenize(f).map(phoneticToken))]);
+    for (const t of all) tokenFreq.set(t, (tokenFreq.get(t) ?? 0) + 1);
+  });
   const categoryKeys = new Set(products.flatMap((p) => tokenize(p.categoryName).map(phoneticToken)));
   const generic = (k: string) => (tokenFreq.get(k) ?? 0) >= 3 || categoryKeys.has(k) || [...categoryKeys].some((c) => c.length >= 4 && (k.startsWith(c) || c.startsWith(k)));
 
@@ -247,6 +273,18 @@ export function buildLexicon(products: readonly FlatProduct[], extraTerms: Recor
         if (k.length >= 4 && (tokenFreq.get(k) ?? 0) <= 1 && !generic(k) && !GENERIC_NAMES.has(w)) add(w, "partial");
       }
     for (const extra of extraTerms[p.key] ?? []) add(extra, "ai");
+    const forms = extraForms[i]!.map((form) => {
+      const fv = pronunciationVariants(form);
+      fv.forEach((v, vi) => add(v, vi === 0 ? "canonical" : "turkish"));
+      for (const v of fv)
+        for (const w of tokenize(v)) {
+          const k = phoneticToken(w);
+          if (k.length >= 4 && (tokenFreq.get(k) ?? 0) <= 1 && !generic(k) && !GENERIC_NAMES.has(w)) add(w, "partial");
+        }
+      const toks = [...new Set(tokenize(form).map(phoneticToken))];
+      const core = toks.filter((k) => !generic(k) && k.length >= 2);
+      return { coreKeys: core.length ? core : toks, nameKeys: phoneticKey(form).split(" ").filter(Boolean) };
+    });
     const coreKeys = productTokens[i]!.filter((k) => !generic(k) && k.length >= 2);
     return {
       productKey: p.key,
@@ -255,6 +293,7 @@ export function buildLexicon(products: readonly FlatProduct[], extraTerms: Recor
       soldOut: p.soldOut,
       terms: [...terms.values()],
       coreKeys: coreKeys.length ? coreKeys : productTokens[i]!,
+      ...(forms.length ? { forms } : {}),
       variants: p.variants.map((v) => ({ ref: v.ref, name: v.name, terms: pronunciationVariants(v.name) })),
       modifiers: p.modifierGroups.flatMap((g) => g.modifiers.map((m) => ({ ref: m.ref, name: m.name, terms: pronunciationVariants(m.name), group: g.name, groupRef: g.ref }))),
     };
@@ -348,25 +387,30 @@ function spokenKeys(spoken: string): string[] {
 
 function scoreEntry(entry: LexiconEntry, keys: string[], vocabulary: ReadonlySet<string> = new Set()): { score: number; via: string } {
   let best = { score: 0, via: "" };
+  // Başka dildeki biçimi olan üründe: söylenen ve menüde geçen bir kelime bu ürünün HİÇBİR adında yoksa ("sea BREAM" →
+  // Sea Bass) ses benzerliği de güven kaybeder. Tek adlı (yalnızca varsayılan dil) menüde davranış değişmez.
+  const allNameKeys = entry.forms?.length ? [...(entry.terms[0]?.key ?? "").split(" "), ...entry.forms.flatMap((f) => f.nameKeys)].filter(Boolean) : null;
+  const windowPenalty = allNameKeys && keys.some((k) => vocabulary.has(k) && !allNameKeys.some((n) => similarity(k, n) >= 0.84)) ? 0.85 : 1;
   // 1) Pencere benzerliği: terimin kelime sayısı ±1 uzunluğundaki ardışık söylenen kelimeler (boşluksuz karşılaştırma).
   for (const term of entry.terms) {
     const n = term.key.split(" ").length;
     const flat = term.key.replace(/\s/g, "");
     for (let len = Math.max(1, n - 1); len <= Math.min(keys.length, n + 1); len++)
       for (let i = 0; i + len <= keys.length; i++) {
-        const s = similarity(keys.slice(i, i + len).join(""), flat) * KIND_WEIGHT[term.kind];
+        const s = similarity(keys.slice(i, i + len).join(""), flat) * KIND_WEIGHT[term.kind] * windowPenalty;
         if (s > best.score) best = { score: s, via: term.text };
       }
   }
   // 2) Ayırt edici kelime kapsaması ("kelle paça" → "Kelle Paça Çorbası"; genel "çorbası" aranmaz).
-  if (entry.coreKeys.length) {
-    const hits = entry.coreKeys.filter((c) => keys.some((k) => similarity(k, c) >= 0.84)).length;
+  const forms = [{ coreKeys: entry.coreKeys, nameKeys: (entry.terms[0]?.key ?? "").split(" ").filter(Boolean) }, ...(entry.forms ?? [])];
+  for (const form of forms) {
+    if (!form.coreKeys.length) continue;
+    const hits = form.coreKeys.filter((c) => keys.some((k) => similarity(k, c) >= 0.84)).length;
     // Söylenen ve menüde geçen başka bir kelime bu ürünün adında yoksa ("LEVREK buğulama" → Hamsi Buğulama) kapsam
     // güveni düşer: ortak kelimeli ürünler arasında söylenen ayırt edici kelimeyi taşıyan ürün öne geçer.
-    const nameKeys = (entry.terms[0]?.key ?? "").split(" ").filter(Boolean);
-    const conflict = keys.some((k) => vocabulary.has(k) && !nameKeys.some((n) => similarity(k, n) >= 0.84));
-    const coverage = (hits / entry.coreKeys.length) * 0.95 * (conflict ? 0.7 : 1);
-    if (hits && coverage > best.score) best = { score: coverage, via: `${hits}/${entry.coreKeys.length} kelime` };
+    const conflict = keys.some((k) => vocabulary.has(k) && !form.nameKeys.some((n) => similarity(k, n) >= 0.84));
+    const coverage = (hits / form.coreKeys.length) * 0.95 * (conflict ? 0.7 : 1);
+    if (hits && coverage > best.score) best = { score: coverage, via: `${hits}/${form.coreKeys.length} kelime` };
   }
   return best;
 }
@@ -378,7 +422,7 @@ function scoreEntry(entry: LexiconEntry, keys: string[], vocabulary: ReadonlySet
 export function matchProduct(lexicon: VoiceLexicon, spoken: string, limit = 5): MatchResult {
   const keys = spokenKeys(spoken);
   if (!keys.length) return { status: "none", candidates: [] };
-  const vocabulary = new Set(lexicon.entries.flatMap((e) => (e.terms[0]?.key ?? "").split(" ").filter(Boolean)));
+  const vocabulary = new Set(lexicon.entries.flatMap((e) => [...(e.terms[0]?.key ?? "").split(" "), ...(e.forms ?? []).flatMap((f) => f.nameKeys)].filter(Boolean)));
   const scored = lexicon.entries
     .map((e) => {
       const s = scoreEntry(e, keys, vocabulary);
@@ -389,8 +433,18 @@ export function matchProduct(lexicon: VoiceLexicon, spoken: string, limit = 5): 
     .slice(0, limit);
   const [top, second] = scored;
   if (!top || top.score < MATCH_THRESHOLDS.medium) {
+    // Söylenen kelimelerin TAMAMI yalnızca bir / birkaç ürünün adında geçiyorsa ("grilled sea bream" → Grilled Gilthead
+    // Sea Bream): tek ürün → onay sorulur; birkaç ürün → hangisi diye sorulur. Ortak tek kelimeden daha isabetli.
+    const nameKeysOf = (e: LexiconEntry) => [...(e.terms[0]?.key ?? "").split(" "), ...(e.forms ?? []).flatMap((f) => f.nameKeys)].filter(Boolean);
+    const containsAll = lexicon.entries.filter((e) => keys.every((x) => nameKeysOf(e).some((k) => similarity(x, k) >= 0.9)));
+    const asCandidate = (e: LexiconEntry): MatchCandidate => ({ productKey: e.productKey, name: e.name, score: MATCH_THRESHOLDS.medium, soldOut: e.soldOut, via: "tüm kelimeler" });
+    if (containsAll.length === 1 && keys.length >= 2) {
+      const only = asCandidate(containsAll[0]!);
+      return only.soldOut ? { status: "sold_out", product: only, candidates: [only] } : { status: "medium", product: only, candidates: [only] };
+    }
+    if (containsAll.length >= 2 && containsAll.length <= limit) return { status: "ambiguous", candidates: containsAll.map(asCandidate) };
     // Yalnızca birden çok ürünün ortak kelimesi söylendi ("kebap", "kelle") → hangisi diye sorulur (tahmin yok).
-    const shared = lexicon.entries.filter((e) => e.terms[0] && e.terms[0].key.split(" ").some((k) => keys.some((x) => similarity(x, k) >= 0.9)));
+    const shared = lexicon.entries.filter((e) => e.terms[0] && [...e.terms[0].key.split(" "), ...(e.forms ?? []).flatMap((f) => f.nameKeys)].some((k) => keys.some((x) => similarity(x, k) >= 0.9)));
     if (shared.length >= 2)
       return { status: "ambiguous", candidates: shared.slice(0, limit).map((e) => ({ productKey: e.productKey, name: e.name, score: MATCH_THRESHOLDS.medium, soldOut: e.soldOut, via: "ortak kelime" })) };
   }

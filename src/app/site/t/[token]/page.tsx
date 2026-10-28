@@ -6,6 +6,7 @@ import { PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_PARAM, pickPublicLocale } from "@/l
 import { shouldCountScan } from "@/lib/tables/scan-count";
 import { getTableQrContext } from "@/lib/tenant/table-qr-context";
 import { recordQrScan } from "@/server/repositories/table-qr.repository";
+import { ensureMenuTranslated } from "@/server/services/menu/auto-translate.service";
 import { getCachedPublicPresentation, getCachedPublishedMenu } from "@/server/services/public-menu/public-menu-cache";
 import { cartScopeFor, createMenuRefs } from "@/server/services/orders/menu-refs";
 import { toPublicMenuView } from "@/server/services/public-menu/serialize";
@@ -57,6 +58,7 @@ export default async function TableMenuPage({ params, searchParams }: Props) {
     tenantDefault: presentation.defaultLocale,
   });
   const menu = await getCachedPublishedMenu(context.scope, { branchId: context.branch.id, locale });
+  ensureMenuTranslated(context.tenant.id, menu);
   const token = (await params).token;
   const view = toPublicMenuView(menu, presentation, {
     table: { name: context.table.name, area: context.area?.name ?? null },

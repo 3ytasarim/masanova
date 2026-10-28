@@ -78,9 +78,50 @@ export function enabledRealtimeTools(settings: { allowRecommendations: boolean; 
   });
 }
 
-/** Realtime oturum araç tanımları (JSON Schema). */
+const TOOL_LANGUAGES = ["tr", "en", "de", "ar", "ru"] as const;
+export type ToolLanguage = (typeof TOOL_LANGUAGES)[number];
+
+/**
+ * Her araca eklenen `lang`: müşterinin ŞU AN konuştuğu dil. Model dili en iyi bilen taraftır; sunucu menüyü bu dilde kurar
+ * (ürün adları / içerikler o dilde döner). Doğrulanmamış girdi: yalnızca bilinen kodlar kabul edilir.
+ */
+const LANG_PARAM = { type: "string", enum: [...TOOL_LANGUAGES], description: "Müşterinin şu an konuştuğu dil (tr / en / de / ar / ru). Her çağrıda doldur." };
+
+export function toolLanguage(raw: unknown): ToolLanguage | null {
+  const lang = raw && typeof raw === "object" ? (raw as { lang?: unknown }).lang : undefined;
+  return typeof lang === "string" && (TOOL_LANGUAGES as readonly string[]).includes(lang) ? (lang as ToolLanguage) : null;
+}
+
+/** Realtime oturum araç tanımları (JSON Schema) + ortak `lang` alanı. */
 export function realtimeToolDefinitions(names: readonly RealtimeToolName[]) {
-  return names.map((name) => ({ type: "function" as const, name, description: REALTIME_TOOLS[name].description, parameters: z.toJSONSchema(REALTIME_TOOLS[name].schema, { target: "draft-7" }) as Record<string, unknown> }));
+  return names.map((name) => {
+    const params = z.toJSONSchema(REALTIME_TOOLS[name].schema, { target: "draft-7" }) as { properties?: Record<string, unknown> } & Record<string, unknown>;
+    return { type: "function" as const, name, description: REALTIME_TOOLS[name].description, parameters: { ...params, properties: { ...(params.properties ?? {}), lang: LANG_PARAM } } };
+  });
+}
+
+/** Araç sonucundaki kısa yönlendirme cümleleri (say) misafirin dilinde — Türkçe metin modeli Türkçeye çekmesin. */
+const SAY: Record<Exclude<ToolLanguage, "tr">, { notOnMenu: string; repeat: string; choose: string; confirm: (name: string) => string }> = {
+  en: { notOnMenu: "I couldn't find an item with that name on our menu.", repeat: "Sorry, I didn't catch the item name — could you say it again?", choose: "Which one would you like?", confirm: (n) => `Did you mean «${n}»?` },
+  de: { notOnMenu: "Ein Gericht mit diesem Namen habe ich auf unserer Karte nicht gefunden.", repeat: "Entschuldigung, den Namen habe ich nicht verstanden — können Sie ihn wiederholen?", choose: "Welches möchten Sie?", confirm: (n) => `Meinten Sie «${n}»?` },
+  ar: { notOnMenu: "لم أجد صنفًا بهذا الاسم في قائمتنا.", repeat: "عذرًا، لم أفهم اسم الصنف، هل يمكنك تكراره؟", choose: "أيّها تفضّل؟", confirm: (n) => `هل تقصد «${n}»؟` },
+  ru: { notOnMenu: "Я не нашёл блюда с таким названием в нашем меню.", repeat: "Извините, я не расслышал название — повторите, пожалуйста?", choose: "Какое вы хотите?", confirm: (n) => `Вы имели в виду «${n}»?` },
+};
+
+const LANGUAGE_NAME: Record<ToolLanguage, string> = { tr: "Turkish", en: "English", de: "German", ar: "Arabic", ru: "Russian" };
+
+export function localizeToolOutput(output: Record<string, unknown>, language: ToolLanguage): Record<string, unknown> {
+  if (language === "tr") return output;
+  const say = SAY[language];
+  const out: Record<string, unknown> = { ...output, replyLanguage: `Answer the guest in ${LANGUAGE_NAME[language]}.` };
+  if (typeof output.say === "string") {
+    if (output.reason === "not_on_menu") out.say = say.notOnMenu;
+    else if (output.needs === "repeat") out.say = say.repeat;
+    else if (output.needs === "choose") out.say = say.choose;
+    else if (output.needs === "confirm" && typeof output.candidate === "string") out.say = say.confirm(output.candidate);
+    else delete out.say;
+  }
+  return out;
 }
 
 // ─── Menü kataloğu (talimata gömülür: sık sorular araç çağrısı beklemeden yanıtlanır → daha hızlı) ─────────
@@ -147,6 +188,8 @@ export function buildRealtimeInstructions(input: RealtimeInstructionInput): stri
     `- ${TONE[input.tone]} Gerçek bir insan garson gibi doğal, akıcı ve canlı konuş; robot gibi değil. Hızlı ve kısa: çoğunlukla 1–2 cümle.`,
     "- Liste okuma, madde işareti, emoji yok. Fiyatı doğal söyle (ör. 'üç yüz seksen lira').",
     "- Müşteri hangi dilde konuşursa O dilde yanıt ver (Türkçe, English, Deutsch, العربية, Русский…). Dil değişirse hemen o dile geç.",
+    "- Yanıt dili = müşterinin SON cümlesinin dili. Araç sonucunda Türkçe not / metin olsa bile müşteriye onun dilinde cevap ver; Türkçeye geri dönme. Her araç çağrısında lang alanına müşterinin konuştuğu dili yaz (ör. İngilizce → \"en\").",
+    "- Başka dilde konuşulurken ürün adlarını ve içeriklerini araç sonucundaki gibi O DİLDE söyle (araçlar menüyü müşterinin dilinde döndürür). Araç sonucunda ad hâlâ Türkçeyse yerleşik yemek adını koru ve kısaca o dilde ne olduğunu açıkla (ör. 'Mantı — Turkish dumplings with yogurt'); fiyatı ve içeriği değiştirme.",
     "- Türkçe konuşurken menüdeki yabancı ürün adlarını Türk garsonların söylediği gibi TÜRKÇE OKUNUŞLA söyle (ör. Cheeseburger → 'çizburger', Cheesecake → 'çizkeyk', Hamburger → 'hamburger', Milkshake → 'milkşeyk'). Müşteri de ürünleri böyle söyleyebilir.",
     "- Müşteri sözünü keserse hemen sus ve onu dinle.",
     "- Anlamadıysan kısaca tekrar etmesini iste; tahmin yürütme.",

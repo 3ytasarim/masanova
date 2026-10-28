@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { CalendarClock, QrCode } from "lucide-react";
 import Link from "next/link";
+import type { MenuLocale } from "@/config/menu";
 import { notFound } from "next/navigation";
 import { getTenantContext, requireTenant } from "@/lib/tenant/tenant-context";
 import { listBranches } from "@/server/repositories/branch.repository";
@@ -8,6 +9,7 @@ import { getPolicy } from "@/server/reservations/context";
 import { LogoMark } from "@/components/layout/logo";
 import { cookies } from "next/headers";
 import { PUBLIC_LOCALE_COOKIE, PUBLIC_LOCALE_PARAM, pickPublicLocale } from "@/lib/public-menu/i18n";
+import { ensureMenuTranslated } from "@/server/services/menu/auto-translate.service";
 import { getCachedPublicPresentation, getCachedPublishedMenu } from "@/server/services/public-menu/public-menu-cache";
 import { toPublicMenuView } from "@/server/services/public-menu/serialize";
 import { createMenuRefs } from "@/server/services/orders/menu-refs";
@@ -44,6 +46,7 @@ export default async function TenantSitePage({ searchParams }: { searchParams: P
   const locale = pickPublicLocale({ query: typeof query === "string" ? query : null, cookie: (await cookies()).get(PUBLIC_LOCALE_COOKIE)?.value ?? null, tenantDefault: presentation.defaultLocale });
   const branchId = branches[0]?.id ?? null;
   const menu = await getCachedPublishedMenu(scope, { branchId, locale });
+  ensureMenuTranslated(tenant.id, menu);
   const view = toPublicMenuView(menu, presentation, { table: null, refOf: createMenuRefs(tenant.id), ordering: null });
   const venue = await loadVenue(tenant.id, branchId, tenant.name, presentation.googleReviewUrl);
   const ai = (await getVoiceAiAccess(tenant.id)).availability.available;
@@ -52,11 +55,11 @@ export default async function TenantSitePage({ searchParams }: { searchParams: P
     <div className="flex flex-col gap-2">
       <p data-testid="site-qr-hint" className="flex items-start gap-2.5 rounded-2xl bg-amber-50 px-4 py-3 text-[0.875rem] leading-relaxed text-amber-950 ring-1 ring-amber-200">
         <QrCode aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-        <span>{ai ? "Sipariş vermek ve sesli garsonla konuşmak için masanızdaki QR kodu okutun." : "Sipariş vermek için masanızdaki QR kodu okutun."}</span>
+        <span>{ai ? SITE_TEXT[view.locale].hintAi : SITE_TEXT[view.locale].hint}</span>
       </p>
       {reservations.enabled && reservations.publicBookingEnabled ? (
         <Link href="/rezervasyon" className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[var(--pm-brand)] px-5 font-semibold text-[var(--pm-on-brand)] shadow-sm" data-testid="site-reservation-link">
-          <CalendarClock aria-hidden="true" className="size-5" /> Rezervasyon yap
+          <CalendarClock aria-hidden="true" className="size-5" /> {SITE_TEXT[view.locale].reserve}
         </Link>
       ) : null}
     </div>
@@ -64,6 +67,14 @@ export default async function TenantSitePage({ searchParams }: { searchParams: P
 
   return <PublicMenu view={view} venue={venue} notice={notice} capabilities={{ ordering: false, service: false }} />;
 }
+
+/** Masasız menü sayfasının kendi metinleri (menü arayüzü sözlüğü public-menu/i18n'de). */
+const SITE_TEXT: Record<MenuLocale, { hintAi: string; hint: string; reserve: string }> = {
+  tr: { hintAi: "Sipariş vermek ve sesli garsonla konuşmak için masanızdaki QR kodu okutun.", hint: "Sipariş vermek için masanızdaki QR kodu okutun.", reserve: "Rezervasyon yap" },
+  en: { hintAi: "Scan the QR code on your table to order and talk to our voice waiter.", hint: "Scan the QR code on your table to order.", reserve: "Book a table" },
+  de: { hintAi: "Scannen Sie den QR-Code auf Ihrem Tisch, um zu bestellen und mit unserem Sprachkellner zu sprechen.", hint: "Scannen Sie den QR-Code auf Ihrem Tisch, um zu bestellen.", reserve: "Tisch reservieren" },
+  ar: { hintAi: "امسح رمز QR الموجود على طاولتك للطلب والتحدث مع النادل الصوتي.", hint: "امسح رمز QR الموجود على طاولتك للطلب.", reserve: "احجز طاولة" },
+};
 
 function TenantUnavailable({ name }: { name: string }) {
   return (

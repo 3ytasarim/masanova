@@ -40,6 +40,10 @@ export type ToolContext = {
   knowledge?: KnowledgeDocument[];
   /** İşletmenin yemek eşleştirmeleri (AiSettings.pairings; ürün anahtarları). */
   pairings?: StoredPairing[];
+  /** Hazır sesli menü sözlüğü (ör. misafirin dilindeki menü + Türkçe adlar). Verilmezse menüden kurulur. */
+  lexicon?: VoiceLexicon;
+  /** Başka dildeki kategori adı → bu menüdeki kategori adı (katlanmış anahtar). Model Türkçe "Balıklar" derse "Fish". */
+  categoryAliases?: Record<string, string>;
 };
 
 export type ToolCollector = { actions: ActionCard[]; products: ProductCard[]; recommendation: RecommendationBundle | null; toolCalls: { name: string; ok: boolean }[] };
@@ -49,7 +53,7 @@ const cardId = () => randomBytes(6).toString("base64url");
 export function createToolExecutor(ctx: ToolContext) {
   const products = flattenMenu(ctx.view);
   // Ürün adı çözümü: sesli menü sözlüğü (güven puanlı). Belirsiz / zayıf eşleşmede ürün DÖNMEZ — ne söyleneceği döner.
-  let lexicon: VoiceLexicon | null = null;
+  let lexicon: VoiceLexicon | null = ctx.lexicon ?? null;
   const resolve = (phrase: string) => resolveSpokenProduct((lexicon ??= buildLexicon(products)), products, phrase);
   const unresolved = (tool: AiToolName, output: Record<string, unknown>) => ({ tool, ...output, ...(output.reason === "not_on_menu" ? { reason: "not_found" } : {}), ok: false }) as unknown as ToolResult;
   const currency = products[0]?.currency ?? "TRY";
@@ -68,7 +72,11 @@ export function createToolExecutor(ctx: ToolContext) {
         const a = parseToolArgs("searchMenu", raw);
         if (!a) return { tool: name, ok: false, error: "invalid_arguments" };
         let list = a.query ? searchProducts(products, a.query) : [...products];
-        if (a.category) list = list.filter((p) => fold(p.categoryName).includes(fold(a.category!)));
+        if (a.category) {
+          const wanted = fold(a.category);
+          const alias = Object.entries(ctx.categoryAliases ?? {}).find(([from]) => from.includes(wanted))?.[1];
+          list = list.filter((p) => fold(p.categoryName).includes(wanted) || (alias !== undefined && p.categoryName === alias));
+        }
         if (a.dietaryTag) list = list.filter((p) => hasDietaryTag(p, a.dietaryTag!));
         if (a.excludeAllergens?.length) list = list.filter((p) => allergenStatus(p, a.excludeAllergens!) === "not_listed");
         if (a.maxPriceMinor !== undefined) list = list.filter((p) => p.unitPriceMinor <= a.maxPriceMinor!);

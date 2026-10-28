@@ -127,6 +127,33 @@ async function runChat(config: { apiKey: string; model: string }, request: AiCom
   throw new ProviderError("tool_loop");
 }
 
+/**
+ * Tek seferlik JSON yanıtı (araç yok, akış yok) — menü çevirisi gibi toplu işler. Sohbet yanıt sınırı (kısa sesli yanıt)
+ * burada geçerli değil; çağıran maxTokens verir. Yanıt JSON değilse ProviderError("bad_json").
+ */
+export async function openAiJson(
+  config: { apiKey: string; model: string },
+  req: { system: string; user: string; maxTokens: number; timeoutMs?: number; signal?: AbortSignal },
+): Promise<{ data: unknown; inputTokens: number; outputTokens: number }> {
+  const body = {
+    model: config.model,
+    messages: [
+      { role: "system", content: req.system },
+      { role: "user", content: req.user },
+    ],
+    temperature: 0.2,
+    max_tokens: req.maxTokens,
+    response_format: { type: "json_object" },
+  };
+  const res = await call("/chat/completions", config.apiKey, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, req.timeoutMs ?? 60_000, req.signal);
+  const json = (await res.json()) as { choices?: { message?: { content?: string | null } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+  try {
+    return { data: JSON.parse(json.choices?.[0]?.message?.content ?? ""), inputTokens: json.usage?.prompt_tokens ?? 0, outputTokens: json.usage?.completion_tokens ?? 0 };
+  } catch {
+    throw new ProviderError("bad_json");
+  }
+}
+
 export function createOpenAiProvider(config: { apiKey: string; model: string }): AiProvider {
   return {
     name: "openai",

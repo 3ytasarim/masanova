@@ -112,4 +112,7 @@ export function invalidatePublicMenu(tenantId: string, context: "action" | "othe
   }
   // Sesli menü dizini: menü değişti → eskimiş + gecikmeli yeniden kurulum (döngüsel içe aktarma olmasın diye dinamik).
   void import("@/server/services/ai/voice-index.service").then((m) => m.scheduleVoiceIndexRefresh(tenantId)).catch(() => undefined);
+  // Panel düzenlemesi: yeni / değişen ürünlerin eksik çevirileri arka planda (art arda düzenlemeler tek işte toplanır).
+  if (context === "action")
+    void import("@/server/services/menu/auto-translate.service").then((m) => m.scheduleMenuAutoTranslate(tenantId, { force: true, delayMs: 30_000 })).catch(() => undefined);
 }

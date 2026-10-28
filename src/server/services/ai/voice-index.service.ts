@@ -128,7 +128,7 @@ export async function buildVoiceIndex(scope: TenantScope, options: { useAi?: boo
         errorCode: null,
       },
     });
-    lexiconCache.delete(tenantId);
+    dropLexicons(tenantId);
     log.info("voice_index.built", { tenant: tenantId, products: lexicon.stats.products, terms: lexicon.stats.terms, ambiguous: lexicon.stats.ambiguous });
   } catch (error) {
     await prisma.voiceMenuIndex.update({ where: { tenantId }, data: { status: "FAILED", errorCode: error instanceof Error ? error.name.slice(0, 40) : "unknown" } });
@@ -180,14 +180,25 @@ async function storedAiTerms(tenantId: string): Promise<Record<string, string[]>
   return terms;
 }
 
-/** Çalışma anı: verilen (canlı, şubeye özgü) menü ürünlerinden sözlük — tükendi / yeni ürün anında yansır. */
-export async function runtimeLexicon(tenantId: string, products: readonly FlatProduct[]): Promise<VoiceLexicon> {
+/**
+ * Çalışma anı: verilen (canlı, şubeye özgü) menü ürünlerinden sözlük — tükendi / yeni ürün anında yansır.
+ * Misafir başka dilde konuşurken ürünler o dilin adlarıyla gelir; `aliases` (ürün anahtarı → varsayılan dildeki ad)
+ * ile Türkçe adı da tanınır ("levrek" ya da "sea bass" aynı ürün). Önbellek dil başına ayrı tutulur.
+ */
+export async function runtimeLexicon(tenantId: string, products: readonly FlatProduct[], opts: { locale?: string; aliases?: Record<string, string> } = {}): Promise<VoiceLexicon> {
   const fingerprint = menuFingerprint(products);
-  const hit = lexiconCache.get(tenantId);
+  const cacheKey = opts.locale ? `${tenantId}:${opts.locale}` : tenantId;
+  const hit = lexiconCache.get(cacheKey);
   if (hit && hit.fingerprint === fingerprint && Date.now() - hit.at < CACHE_MS) return hit.lexicon;
-  const lexicon = buildLexicon(products, await storedAiTerms(tenantId));
-  lexiconCache.set(tenantId, { at: Date.now(), fingerprint, lexicon });
+  const altNames: Record<string, string[]> = {};
+  for (const [key, name] of Object.entries(opts.aliases ?? {})) altNames[key] = [name];
+  const lexicon = buildLexicon(products, await storedAiTerms(tenantId), altNames);
+  lexiconCache.set(cacheKey, { at: Date.now(), fingerprint, lexicon });
   return lexicon;
+}
+
+function dropLexicons(tenantId: string): void {
+  for (const key of lexiconCache.keys()) if (key === tenantId || key.startsWith(`${tenantId}:`)) lexiconCache.delete(key);
 }
 
 // ─── Menü değişince: eskimiş işaretle; yeniden kurulum güvenilir kapsamla (oturum / QR) arka planda ─────────
@@ -196,7 +207,7 @@ export async function runtimeLexicon(tenantId: string, products: readonly FlatPr
 export function scheduleVoiceIndexRefresh(tenantId: string): void {
   void prisma.voiceMenuIndex.updateMany({ where: { tenantId, status: "READY" }, data: { status: "STALE", staleSince: new Date() } }).catch(() => undefined);
   aiTermsCache.delete(tenantId);
-  lexiconCache.delete(tenantId);
+  dropLexicons(tenantId);
 }
 
 const refreshing = new Set<string>();

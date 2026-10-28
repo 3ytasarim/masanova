@@ -3,6 +3,10 @@ import Link from "next/link";
 import { formatDateTime, formatNumber } from "@/lib/utils/format";
 import { getMenuOverview } from "@/server/repositories/menu.repository";
 import { getMenuPageContext } from "@/server/menu-page-context";
+import { translateMenuStepAction } from "@/server/actions/menu-translate.actions";
+import { getJsonCompleter } from "@/server/services/ai/config";
+import { countMissing, findMissingTranslations } from "@/server/services/menu/auto-translate.service";
+import { AutoTranslateCard } from "@/components/menu/auto-translate-card";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,7 +15,8 @@ import { StatCard } from "@/components/ui/stat-card";
 
 export default async function MenuOverviewPage() {
   const { scope, canManage, locales } = await getMenuPageContext();
-  const overview = await getMenuOverview(scope, locales.translatable);
+  const aiTranslate = !!getJsonCompleter() && locales.translatable.length > 0;
+  const [overview, missing] = await Promise.all([getMenuOverview(scope, locales.translatable), aiTranslate ? findMissingTranslations(scope.tenantId, locales.translatable).then(countMissing) : 0]);
 
   return (
     <>
@@ -44,6 +49,8 @@ export default async function MenuOverviewPage() {
           hint={`Diller: ${locales.translatable.map((l) => l.toUpperCase()).join(", ")}`}
         />
       </section>
+
+      {aiTranslate ? <AutoTranslateCard missing={missing} locales={locales.translatable} step={translateMenuStepAction} readOnly={!canManage} /> : null}
 
       <Card className="mt-8">
         <CardHeader>
