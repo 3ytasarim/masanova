@@ -3,7 +3,7 @@
 import { BellOff, BellRing, Banknote, CreditCard, ExternalLink, LogOut, Maximize, Minimize, Printer, Receipt, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { openFor, type BillLine } from "@/lib/cashier/bill";
 import { formatMoney } from "@/lib/menu/money";
 import { formatOrderNumber } from "@/lib/orders/status";
@@ -80,7 +80,8 @@ export function CashierBoard({
   const [confirm, setConfirm] = useState<"CASH" | "CARD_TERMINAL" | null>(null);
   const [printing, setPrinting] = useState<CashierTableView | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
-  const [soundOn, setSoundOn] = useState(false);
+  // Zil: kasa terminalinde varsayılan AÇIK; tercih bu cihazda hatırlanır.
+  const soundOn = useSyncExternalStore(subscribeSoundPref, () => readSoundPref(standalone), () => standalone);
   const [logoutArmed, setLogoutArmed] = useState(false);
   const [pending, startTransition] = useTransition();
   const boardRef = useRef<HTMLDivElement>(null);
@@ -147,13 +148,47 @@ export function CashierBoard({
     return () => clearTimeout(id);
   }, [logoutArmed]);
 
-  // Yeni "Hesap" talebi sesi (ilk yüklemede değil).
+  // Ses: tarayıcı ilk dokunuşa kadar sesi engeller → zil açıksa ekrana ilk dokunuşta ses kendiliğinden etkinleşir.
+  const ensureAudio = (): AudioContext | null => {
+    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return null;
+    audioRef.current ??= new Ctor();
+    if (audioRef.current.state === "suspended") void audioRef.current.resume().catch(() => undefined);
+    return audioRef.current;
+  };
   useEffect(() => {
-    const ids = requesting.filter((t) => !t.billRequest!.printed).map((t) => `${t.id}:${t.billRequest!.at}`);
+    if (!soundOn) return;
+    const unlock = () => void ensureAudio();
+    unlock();
+    window.addEventListener("pointerdown", unlock, { capture: true });
+    window.addEventListener("keydown", unlock, { capture: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock, { capture: true });
+      window.removeEventListener("keydown", unlock, { capture: true });
+    };
+  }, [soundOn]);
+
+  // Yeni "Hesap" talebi (QR'dan ya da sesli garsona söyleyerek): zil çalar (ilk yüklemede değil).
+  const unprinted = requesting.filter((t) => !t.billRequest!.printed);
+  useEffect(() => {
+    const ids = unprinted.map((t) => `${t.id}:${t.billRequest!.at}`);
     const known = knownRequests.current;
-    if (known && soundOn && audioRef.current && ids.some((id) => !known.has(id))) chime(audioRef.current);
+    if (known && soundOn && ids.some((id) => !known.has(id))) {
+      const ctx = ensureAudio();
+      if (ctx) chime(ctx);
+    }
     knownRequests.current = new Set([...(known ?? []), ...ids]);
-  }, [requesting, soundOn]);
+  });
+  // Hatırlatma: adisyonu basılmamış hesap talebi varken zil 45 sn'de bir yeniden çalar.
+  const hasUnprinted = unprinted.length > 0;
+  useEffect(() => {
+    if (!soundOn || !hasUnprinted) return;
+    const id = setInterval(() => {
+      const ctx = ensureAudio();
+      if (ctx) chime(ctx);
+    }, 45_000);
+    return () => clearInterval(id);
+  }, [soundOn, hasUnprinted]);
 
   useEffect(() => {
     const onChange = () => setFullscreen(document.fullscreenElement === boardRef.current);
@@ -175,14 +210,13 @@ export function CashierBoard({
   }, [printing]);
 
   function toggleSound() {
-    if (!soundOn) {
-      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!Ctor) return toast("Bu tarayıcı sesli uyarıyı desteklemiyor.", "error");
-      audioRef.current ??= new Ctor();
-      void audioRef.current.resume();
-      chime(audioRef.current);
+    const next = !soundOn;
+    if (next) {
+      const ctx = ensureAudio();
+      if (!ctx) return toast("Bu tarayıcı sesli uyarıyı desteklemiyor.", "error");
+      chime(ctx);
     }
-    setSoundOn(!soundOn);
+    writeSoundPref(next);
   }
 
   async function toggleFullscreen() {
@@ -538,13 +572,43 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** Hesap talebi sesi: iki yükselen ton (KDS bip'inden ayırt edilir). */
+const SOUND_KEY = "mn_cashier_sound";
+function readSoundPref(standalone: boolean): boolean {
+  try {
+    const v = typeof window === "undefined" ? null : window.localStorage.getItem(SOUND_KEY);
+    return v === null ? standalone : v === "1";
+  } catch {
+    return standalone;
+  }
+}
+function writeSoundPref(on: boolean) {
+  try {
+    window.localStorage.setItem(SOUND_KEY, on ? "1" : "0");
+  } catch {
+    /* özel pencere vb. — yok say */
+  }
+  window.dispatchEvent(new Event(SOUND_EVENT));
+}
+const SOUND_EVENT = "mn-cashier-sound";
+function subscribeSoundPref(onChange: () => void) {
+  window.addEventListener(SOUND_EVENT, onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    window.removeEventListener(SOUND_EVENT, onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+/** Hesap zili: masa zili gibi iki kez "din-don-din" (KDS bip'inden ayırt edilir). */
 function chime(ctx: AudioContext) {
   const t = ctx.currentTime;
   for (const [offset, freq] of [
-    [0, 660],
-    [0.16, 880],
-    [0.32, 1320],
+    [0, 988],
+    [0.18, 1319],
+    [0.36, 1568],
+    [0.9, 988],
+    [1.08, 1319],
+    [1.26, 1568],
   ] as const) {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
