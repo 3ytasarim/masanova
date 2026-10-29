@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Clock, Gift, Globe, Sparkles, MapPin, MessageSquareText, Mic, Navigation, Receipt, Search, ShoppingBag, SlidersHorizontal, Star, Store, UserRound, UtensilsCrossed, X } from "lucide-react";
+import { Check, ChevronDown, Clock, Gift, Sparkles, MapPin, MessageSquareText, Mic, Navigation, Receipt, Search, ShoppingBag, SlidersHorizontal, Star, Store, UserRound, UtensilsCrossed, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -15,6 +15,7 @@ import type { PublicAccount } from "@/lib/crm/types";
 import { cn } from "@/lib/utils/cn";
 import { contrastRatio } from "@/lib/tables/contrast";
 import { displaySerif } from "@/components/public/fonts";
+import { LocaleFlag } from "@/components/public/locale-flag";
 import { ProductCard } from "@/components/public/product-card";
 import { ProductImage } from "@/components/public/product-image";
 import { AllergenNotice, ProductSheet, type SheetOrdering } from "@/components/public/product-sheet";
@@ -772,38 +773,69 @@ function LanguageMenu({ view, t, dark = false }: { view: PublicMenuView; t: Publ
         type="button"
         aria-expanded={open}
         aria-haspopup="true"
+        data-testid="language-menu"
         onClick={() => setOpen((o) => !o)}
-        className={cn("inline-flex h-11 items-center gap-1.5 rounded-full px-3 text-[0.8125rem] font-semibold shadow-sm ring-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pm-accent)]", dark ? "bg-white/10 text-white ring-white/10" : "bg-white ring-stone-900/10")}
+        className={cn(
+          "inline-flex h-11 items-center gap-2 rounded-full ps-1.5 pe-3 text-[0.8125rem] font-semibold shadow-sm ring-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pm-accent)]",
+          dark ? "bg-white/10 text-white ring-white/15 hover:bg-white/15" : "bg-white text-stone-900 ring-stone-900/10 hover:bg-stone-50",
+        )}
       >
-        <Globe aria-hidden="true" className="size-4" />
+        <LocaleFlag locale={view.locale} className="size-8" />
         <span>{LOCALE_BADGES[view.locale]}</span>
+        <ChevronDown aria-hidden="true" className={cn("size-3.5 opacity-60 transition-transform duration-200", open && "rotate-180")} />
         <span className="sr-only">— {t.language}</span>
       </button>
       {open ? (
-        <ul className="absolute end-0 top-[calc(100%+0.5rem)] z-30 w-44 overflow-hidden rounded-2xl bg-white p-1.5 shadow-xl ring-1 ring-stone-900/10">
-          {view.availableLocales.map((locale) => (
-            <li key={locale}>
-              <Link
-                href={{ query: { [PUBLIC_LOCALE_PARAM]: locale } }}
-                replace
-                scroll={false}
-                hrefLang={locale}
-                lang={locale}
-                aria-current={locale === view.locale ? "true" : undefined}
-                onClick={() => {
-                  // Tercih yalnızca bu cihazda, yalnızca dil kodu olarak hatırlanır (izleme yok).
-                  document.cookie = `${PUBLIC_LOCALE_COOKIE}=${locale}; path=/; max-age=31536000; samesite=lax`;
-                  if (locale !== view.locale) trackMenuEvent({ type: "language_changed", from: view.locale, to: locale });
-                  setOpen(false);
-                }}
-                className="flex min-h-11 items-center justify-between gap-2 rounded-xl px-3 text-[0.9375rem] hover:bg-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pm-accent)]"
-              >
-                <span>{MENU_LOCALE_LABELS[locale]}</span>
-                {locale === view.locale ? <Check aria-hidden="true" className="size-4" /> : <span className="text-xs text-stone-400">{LOCALE_BADGES[locale]}</span>}
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <div
+          data-testid="language-list"
+          className={cn(
+            "absolute end-0 top-[calc(100%+0.5rem)] z-30 w-60 origin-top-right overflow-hidden rounded-3xl p-2 shadow-[0_24px_60px_-12px_rgb(0_0_0/0.5)] ring-1 backdrop-blur-xl motion-safe:animate-lm-in",
+            dark ? "bg-stone-900/[0.97] text-white ring-white/10" : "bg-white text-stone-900 ring-stone-900/10",
+          )}
+        >
+          <p className={cn("px-3 pb-1.5 pt-1 text-[0.6875rem] font-semibold uppercase tracking-[0.12em]", dark ? "text-white/45" : "text-stone-400")}>{t.language}</p>
+          <ul className="grid gap-0.5">
+            {view.availableLocales.map((locale) => {
+              const active = locale === view.locale;
+              return (
+                <li key={locale}>
+                  <Link
+                    href={{ query: { [PUBLIC_LOCALE_PARAM]: locale } }}
+                    replace
+                    scroll={false}
+                    hrefLang={locale}
+                    lang={locale}
+                    aria-current={active ? "true" : undefined}
+                    onClick={() => {
+                      // Tercih yalnızca bu cihazda, yalnızca dil kodu olarak hatırlanır (izleme yok).
+                      document.cookie = `${PUBLIC_LOCALE_COOKIE}=${locale}; path=/; max-age=31536000; samesite=lax`;
+                      if (locale !== view.locale) trackMenuEvent({ type: "language_changed", from: view.locale, to: locale });
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "flex min-h-12 items-center gap-3 rounded-2xl px-2.5 text-[0.9375rem] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pm-accent)]",
+                      active
+                        ? "bg-[color-mix(in_srgb,var(--pm-accent)_18%,transparent)]"
+                        : dark
+                          ? "hover:bg-white/10"
+                          : "hover:bg-stone-100",
+                    )}
+                  >
+                    <LocaleFlag locale={locale} className="size-7" />
+                    <span className="flex-1">{MENU_LOCALE_LABELS[locale]}</span>
+                    {active ? (
+                      <span className="grid size-6 place-items-center rounded-full bg-[var(--pm-accent)] text-white">
+                        <Check aria-hidden="true" className="size-3.5" strokeWidth={3} />
+                      </span>
+                    ) : (
+                      <span className={cn("text-[0.6875rem] font-semibold tracking-wide", dark ? "text-white/40" : "text-stone-400")}>{LOCALE_BADGES[locale]}</span>
+                    )}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       ) : null}
     </div>
   );
