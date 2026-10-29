@@ -8,6 +8,7 @@ import { formatOrderNumber } from "@/lib/orders/status";
 import { trackMenuEvent } from "@/lib/public-menu/events";
 import { cn } from "@/lib/utils/cn";
 import { RealtimeVoiceClient, type RealtimeState, type RealtimeTurnStats } from "@/lib/voice/realtime-webrtc";
+import { AI_LANGUAGES, detectLanguage, type AiLanguage } from "@/lib/voice/language-detection";
 import { submitOrderAction } from "@/server/actions/order.actions";
 import { submitServiceRequestAction } from "@/server/actions/service-request.actions";
 import type { CustomerServiceRequestView } from "@/server/services/service-requests/customer-request.service";
@@ -38,6 +39,8 @@ export type VoiceConciergeProps = {
   onServiceResult: (request: CustomerServiceRequestView) => void;
   /** Gerçek zamanlı ses yoksa klasik asistana düş. */
   onFallback: () => void;
+  /** Müşteri başka dilde konuşmaya başladı → menü o dile geçer (bağlantı kesilmeden). */
+  onLanguage?: (language: AiLanguage) => void;
 };
 
 const PROOF_PREFIX = "mn_ai:";
@@ -107,6 +110,9 @@ const GESTURES = ["pointerdown", "keydown", "touchend"] as const;
 export default function VoiceConcierge(props: VoiceConciergeProps) {
   const { token, scope } = props;
   const s = props.uiLocale === "tr" ? STRINGS.tr : STRINGS.en;
+  // Bağlantı kodu metinleri ref üzerinden okur: menü dili değişince (tr → en) oturum yeniden başlamasın.
+  const sRef = useRef(s);
+
   const [phase, setPhase] = useState<Phase>("starting");
   const [state, setState] = useState<RealtimeState>("connecting");
   const [muted, setMuted] = useState(false);
@@ -118,12 +124,17 @@ export default function VoiceConcierge(props: VoiceConciergeProps) {
   const reviewed = useRef<string | null>(null);
   const orderKey = useRef<string | null>(null);
   const greeted = useRef(false);
+  /** Son konuşmalar (yeniden bağlanınca modele hatırlatılır). */
+  const recentTurns = useRef<string[]>([]);
+  const phaseRef = useRef<Phase>("starting");
+  const activeWhenHidden = useRef(false);
   const greeting = useRef("");
   const idleTimer = useRef(0);
   const starting = useRef(false);
   const propsRef = useRef(props);
   useEffect(() => {
     propsRef.current = props;
+    sRef.current = props.uiLocale === "tr" ? STRINGS.tr : STRINGS.en;
   });
 
   const headers = useCallback(() => {
@@ -146,9 +157,26 @@ export default function VoiceConcierge(props: VoiceConciergeProps) {
   }, [stop]);
 
   // ── Araçların etkisi (mevcut sepet / sipariş / servis mantığı) ──
+  // Konuşma dili → menü dili. Açık geçiş ("speak English", "Sprichst du Deutsch?") ya da güvenli algılama; kararsızsa
+  // değiştirilmez (menü titremesin). Araç çağrısındaki lang alanı modelin bildirdiği dildir.
+  const followLanguage = useCallback((language: AiLanguage | null) => {
+    const p = propsRef.current;
+    if (language && language !== p.uiLocale) p.onLanguage?.(language);
+  }, []);
+  const followText = useCallback(
+    (text: string) => {
+      const current = ((AI_LANGUAGES as readonly string[]).includes(propsRef.current.uiLocale) ? propsRef.current.uiLocale : "tr") as AiLanguage;
+      const d = detectLanguage(text, current);
+      if (d.explicitSwitch || (!d.uncertain && d.confidence >= 0.75)) followLanguage(d.language);
+    },
+    [followLanguage],
+  );
+
   const applyTool = useCallback(
     async (name: string, args: unknown): Promise<Record<string, unknown>> => {
       const p = propsRef.current;
+      const lang = args && typeof args === "object" ? (args as { lang?: unknown }).lang : undefined;
+      if (typeof lang === "string" && (AI_LANGUAGES as readonly string[]).includes(lang)) followLanguage(lang as AiLanguage);
       const cart = p.readCart();
       const heard = name === "addToCart" ? await client.current?.heard() : undefined;
       const res = await fetch(`/t/${token}/asistan/arac`, {
@@ -199,7 +227,7 @@ export default function VoiceConcierge(props: VoiceConciergeProps) {
             reviewed.current = null;
             orderKey.current = null;
             trackMenuEvent({ type: "order_submitted", items: r.order.itemCount, duplicate: r.kind === "duplicate" });
-            setOrderBanner(s.orderSent(number));
+            setOrderBanner(sRef.current.orderSent(number));
             window.setTimeout(() => setOrderBanner(null), 6000);
             return { ok: true, orderNumber: number, itemCount: r.order.itemCount, table: r.order.tableName, status: "sent_to_kitchen" };
           }
@@ -217,16 +245,19 @@ export default function VoiceConcierge(props: VoiceConciergeProps) {
       }
       return data.output;
     },
-    [token, headers, s],
+    [token, headers, followLanguage],
   );
 
   const recordTurn = useCallback(
     (stats: RealtimeTurnStats) => {
       armIdle();
       if (!stats.userText && !stats.reply) return;
+      // Garson müşterinin dilinde yanıt verir → yanıtın dili de sinyaldir.
+      if (stats.reply) followText(stats.reply);
+      recentTurns.current = [...recentTurns.current, `Müşteri: ${stats.userText || "…"}\nGarson: ${stats.reply || "…"}`].slice(-6);
       void fetch(`/t/${token}/asistan/kayit`, { method: "POST", headers: headers(), body: JSON.stringify({ turnKey: newKey(), ...stats, userText: stats.userText.slice(0, 2000), reply: stats.reply.slice(0, 4000) }), keepalive: true }).catch(() => undefined);
     },
-    [token, headers, armIdle],
+    [token, headers, armIdle, followText],
   );
 
   /** Ses çalınabiliyorsa karşıla; tarayıcı engellediyse ilk dokunuşu bekle (özel düğme yok — sayfanın herhangi bir yeri). */
@@ -262,7 +293,7 @@ export default function VoiceConcierge(props: VoiceConciergeProps) {
       if (!data?.ok || !data.clientSecret) {
         mic.getTracks().forEach((t) => t.stop());
         if (data?.error === "provider_unavailable") return propsRef.current.onFallback();
-        setNotice(s.unavailable);
+        setNotice(sRef.current.unavailable);
         setPhase("failed");
         return;
       }
@@ -275,10 +306,11 @@ export default function VoiceConcierge(props: VoiceConciergeProps) {
         },
         onToolCall: applyTool,
         onTurn: recordTurn,
+        onTranscript: followText,
         onError: (code) => {
           if (code === "connection_lost") {
             stop();
-            setNotice(s.error);
+            setNotice(sRef.current.error);
             setPhase("paused");
           }
         },
@@ -287,18 +319,20 @@ export default function VoiceConcierge(props: VoiceConciergeProps) {
       c.attachAudio(audioEl.current!);
       await c.connect({ clientSecret: data.clientSecret, mic });
       // Veri kanalı açık: ses çalınabiliyorsa hemen karşıla, değilse ilk dokunuşta.
+      // Kilit / arka plan sonrası yeniden bağlanma: karşılama yok, model kaldığı yerden sürdürür.
+      if (greeted.current) c.restoreContext(recentTurns.current.join("\n"));
       playAndGreet();
       armIdle();
     } catch (error) {
       mic?.getTracks().forEach((t) => t.stop());
       stop();
       const denied = error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError");
-      setNotice(denied ? s.micDenied : s.unavailable);
+      setNotice(denied ? sRef.current.micDenied : sRef.current.unavailable);
       setPhase("failed");
     } finally {
       starting.current = false;
     }
-  }, [token, headers, proofKey, applyTool, recordTurn, playAndGreet, armIdle, stop, s]);
+  }, [token, headers, proofKey, applyTool, recordTurn, followText, playAndGreet, armIdle, stop]);
 
   // Menü açılınca kendiliğinden başla; sayfadan çıkınca mikrofon ve bağlantı kapanır.
   useEffect(() => {
@@ -312,6 +346,39 @@ export default function VoiceConcierge(props: VoiceConciergeProps) {
     };
   }, [start, stop]);
 
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
+
+  // Konuşma sürerken ekran kendiliğinden kararıp kilitlenmesin (Screen Wake Lock; desteklemeyen tarayıcıda sessizce yok).
+  useEffect(() => {
+    if (phase !== "live" || typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let cancelled = false;
+    const acquire = () => {
+      if (document.visibilityState !== "visible" || lock) return;
+      navigator.wakeLock
+        .request("screen")
+        .then((l) => {
+          if (cancelled) return void l.release().catch(() => undefined);
+          lock = l;
+          l.addEventListener("release", () => {
+            if (lock === l) lock = null;
+          });
+        })
+        .catch(() => undefined);
+    };
+    acquire();
+    // Kilit sayfa gizlenince tarayıcı tarafından bırakılır → geri gelince yeniden al.
+    document.addEventListener("visibilitychange", acquire);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", acquire);
+      void lock?.release().catch(() => undefined);
+      lock = null;
+    };
+  }, [phase]);
+
   const resume = () => {
     greeted.current = true; // kaldığı yerden: yeniden karşılama yok
     setNotice(null);
@@ -319,6 +386,30 @@ export default function VoiceConcierge(props: VoiceConciergeProps) {
     setState("connecting");
     void start();
   };
+
+  // Telefon kilitlenip açıldı / uygulamadan dönüldü: bağlantı ya da mikrofon düştüyse sessizce yeniden bağlan
+  // (baştan konuşmak gerekmez; önceki konuşma modele hatırlatılır).
+  const resumeRef = useRef(resume);
+  useEffect(() => {
+    resumeRef.current = resume;
+  });
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        activeWhenHidden.current = phaseRef.current === "live";
+        return;
+      }
+      if (!activeWhenHidden.current) return;
+      activeWhenHidden.current = false;
+      const current = phaseRef.current;
+      const broken = current === "paused" || current === "failed" || (current === "live" && !(client.current?.healthy ?? false));
+      if (!broken) return;
+      stop();
+      resumeRef.current();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [stop]);
 
   const live = phase === "live";
   const label =

@@ -31,6 +31,8 @@ export type RealtimeHandlers = {
   onError: (code: string) => void;
   /** Model ses izi geldi (ses seviyesi görselleştirmesi için). */
   onRemoteStream?: (stream: MediaStream) => void;
+  /** Müşterinin bir cümlesi yazıya döküldü (ör. dil değişimini hemen yakalamak için). */
+  onTranscript?: (text: string) => void;
 };
 
 type ServerEvent = { type: string; [k: string]: unknown };
@@ -145,6 +147,25 @@ export class RealtimeVoiceClient {
     setTimeout(() => this.endGreeting(), 12_000);
   }
 
+  /**
+   * Bağlantı ve mikrofon hâlâ çalışıyor mu? Telefon kilitlenince (özellikle iOS) mikrofon izi biter ya da bağlantı
+   * düşer; sayfa geri gelince buna bakılıp gerekirse sessizce yeniden bağlanılır.
+   */
+  get healthy(): boolean {
+    const track = this.mic?.getAudioTracks()[0];
+    const pcState = this.pc?.connectionState;
+    return !!track && track.readyState === "live" && this.dc?.readyState === "open" && pcState !== "failed" && pcState !== "closed" && pcState !== "disconnected";
+  }
+
+  /** Yeniden bağlanınca önceki konuşmanın son kısmı (model kaldığı yerden sürdürür; yeniden karşılama yok). */
+  restoreContext(summary: string) {
+    if (!summary.trim()) return;
+    this.send({
+      type: "conversation.item.create",
+      item: { type: "message", role: "system", content: [{ type: "input_text", text: `Bağlantı kısa süre kesildi, konuşma sürüyor. Yeniden selamlama yapma; müşterinin dilinde kaldığın yerden devam et. Son konuşma:\n${summary.slice(0, 3000)}` }] },
+    });
+  }
+
   private endGreeting() {
     if (!this.greeting) return;
     this.greeting = false;
@@ -239,7 +260,10 @@ export class RealtimeVoiceClient {
         const t = String(e.transcript ?? "").trim();
         if (t && !/^(restoran siparişi|menü:)/i.test(t)) this.heardLog = [...this.heardLog, t].slice(-6);
         // Gürültüde tanıma modeli ipucunu (menü sözlüğü) aynen yazabilir → konuşma metni sayılmaz.
-        if (t && !/^(restoran siparişi|menü:)/i.test(t)) this.userText = this.userText ? `${this.userText} ${t}` : t;
+        if (t && !/^(restoran siparişi|menü:)/i.test(t)) {
+          this.userText = this.userText ? `${this.userText} ${t}` : t;
+          this.handlers.onTranscript?.(t);
+        }
         break;
       }
       case "response.created":

@@ -3,6 +3,7 @@
 import { Check, ChevronDown, Clock, Gift, Sparkles, MapPin, MessageSquareText, Mic, Navigation, Receipt, Search, ShoppingBag, SlidersHorizontal, Star, Store, UserRound, UtensilsCrossed, X } from "lucide-react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { MENU_LOCALE_LABELS } from "@/config/menu";
 import { trackMenuEvent } from "@/lib/public-menu/events";
@@ -102,6 +103,16 @@ export function PublicMenu({
   const showAssistant = !!ordering && assistantAvailable;
   // Sesli garson menüyle birlikte kendiliğinden çalışır; gerçek zamanlı ses yoksa klasik (bas-konuş) panele düşülür.
   const [classicVoice, setClassicVoice] = useState(!realtimeVoice);
+  const router = useRouter();
+  // Sesli garsonla konuşulan dil → menü dili (sayfa yeniden yüklenmez; sesli bağlantı sürer). Yalnızca menü dilleri.
+  const followVoiceLanguage = (language: string) => {
+    if (language === view.locale || !(view.availableLocales as readonly string[]).includes(language)) return;
+    document.cookie = `${PUBLIC_LOCALE_COOKIE}=${language}; path=/; max-age=31536000; samesite=lax`;
+    trackMenuEvent({ type: "language_changed", from: view.locale, to: language as typeof view.locale });
+    const params = new URLSearchParams(window.location.search);
+    params.set(PUBLIC_LOCALE_PARAM, language);
+    router.replace(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+  };
   const productByKey = (key: string) => view.categories.flatMap((c) => c.products).find((p) => p.key === key) ?? null;
   const addAssistantLines = (lines: CartLinePayload[]) => {
     update((c) => lines.reduce((acc, line) => addLine(acc, line), c));
@@ -617,6 +628,7 @@ export function PublicMenu({
                 remember={remember}
                 onServiceResult={service.upsert}
                 onFallback={() => setClassicVoice(true)}
+                onLanguage={followVoiceLanguage}
               />
             ) : null
           }
