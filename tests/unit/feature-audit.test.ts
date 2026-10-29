@@ -21,13 +21,14 @@ const ACTIONS: Record<string, Record<string, Policy>> = {
   "ai.actions": { saveAiSettingsAction: S("voice_ai", "src/server/services/ai/settings.service.ts") },
   "pairings.actions": { savePairingsAction: A("voice_ai"), generatePairingsAction: A("voice_ai") },
   "voice-index.actions": { buildVoiceIndexAction: A("voice_ai"), testVoiceMatchAction: A("voice_ai") },
-  "auth.actions": { loginAction: "all_plans", logoutAction: "all_plans" },
+  "auth.actions": { loginAction: "all_plans", logoutAction: "all_plans", cashierLogoutAction: "all_plans" },
   "campaign.actions": { saveCouponAction: A("promotions"), couponStatusAction: A("promotions"), saveRewardAction: A("promotions"), rewardStateAction: A("promotions"), saveCampaignAction: A("promotions"), campaignStatusAction: A("promotions") },
   "crm.actions": { createCustomerAction: A("crm"), updateCustomerAction: A("crm"), revokeConsentAction: "continuation", adjustPointsAction: A("loyalty"), saveLoyaltySettingsAction: A("loyalty") },
   "customer.actions": { joinCustomerAction: A("crm"), verifyCustomerAction: A("crm"), updateCustomerNameAction: "continuation", updateCustomerConsentsAction: "continuation", logoutCustomerAction: "continuation", requestCustomerDeletionAction: "continuation" },
   "demo-request.actions": { submitDemoRequestAction: "all_plans", updateDemoRequestAction: "all_plans" },
   "menu.actions": Object.fromEntries(["saveCategoryAction", "categoryQuickAction", "updateProductGeneralAction", "updateProductPricingAction", "updateProductContentAction", "saveProductTranslationsAction", "productImageAction", "productQuickAction", "bulkProductAction", "saveVariantAction", "variantQuickAction", "saveModifierGroupAction", "modifierGroupQuickAction", "saveModifierAction", "modifierQuickAction", "productModifierGroupAction", "saveLibraryItemAction", "saveBranchOverrideAction", "createProductAction"].map((n) => [n, "all_plans" as Policy])),
   "menu-translate.actions": { translateMenuStepAction: "all_plans" },
+  "cashier.actions": { markBillPrintedAction: A("cashier_screen"), closeTableBillAction: A("cashier_screen") },
   "onboarding.actions": { checkSlugAvailabilityAction: "all_plans", checkDomainAvailabilityAction: "all_plans", checkOwnerEmailAction: "all_plans", createTenantAction: "all_plans" },
   "order.actions": { submitOrderAction: S("ordering", "src/server/services/orders/submit-order.service.ts"), checkCartAction: A("ordering"), orderStatusAction: "continuation", ticketStatusAction: "continuation" },
   "payment-public.actions": { startPaymentAction: S("restaurant_payments", "src/server/payments/payment.service.ts"), paymentStatusAction: "continuation", paymentsAvailableAction: S("restaurant_payments", "src/server/payments/payment.service.ts") },
@@ -71,6 +72,7 @@ const ROUTES: Record<string, Policy> = {
   "src/app/panel/masalar/indir/qr/route.ts": "all_plans",
   "src/app/panel/masalar/indir/sayfa/route.ts": "all_plans",
   "src/app/panel/olaylar/route.ts": "continuation",
+  "src/app/kasa/oturum/route.ts": "all_plans",
   "src/app/site/platform/[...path]/route.ts": "all_plans",
   "src/app/site/t/[token]/akis/route.ts": "continuation",
   "src/app/site/t/[token]/asistan/canli/rapor/route.ts": S("voice_ai", "src/server/services/ai/access.service.ts"),
@@ -138,13 +140,13 @@ describe("özellik denetim matrisi", () => {
     }
   });
 
-  it("paket beklentisi: kapılı her özellik STARTER'da yok, AI'da var; PRO yalnızca AI özelliklerinden yoksun", () => {
+  it("paket beklentisi: kapılı her özellik STARTER'da yok, AI'da var; PRO yalnızca Full (AI) özelliklerinden yoksun", () => {
     const gated = new Set<Feature>();
     for (const fns of Object.values(ACTIONS)) for (const p of Object.values(fns)) if (typeof p !== "string") gated.add(p.gate);
     for (const f of gated) {
       expect(planHasFeature("STARTER", f), f).toBe(false);
       expect(planHasFeature("AI", f), f).toBe(true);
-      expect(planHasFeature("PRO", f), f).toBe(f !== "voice_ai" && f !== "business_advisor");
+      expect(planHasFeature("PRO", f), f).toBe(f !== "voice_ai" && f !== "business_advisor" && f !== "cashier_screen");
     }
     expect(PLAN_ORDER).toEqual(["STARTER", "VOICE_MENU", "PRO", "AI"]);
     // Kanonik çözücü dışında paket karşılaştırması yazılmaz
@@ -158,6 +160,6 @@ describe("özellik denetim matrisi", () => {
     };
     walk("src");
     expect(offenders).toEqual([]);
-    expect(FEATURES.length).toBe(16);
+    expect(FEATURES.length).toBe(17);
   });
 });

@@ -110,6 +110,7 @@
   --animate-rise-in: rise-in var(--duration-slow) var(--ease-out-expo) both;
   --animate-sheet-in: sheet-in var(--duration-base) var(--ease-out-expo) both;
   --animate-lm-in: lm-in 180ms var(--ease-out-expo) both;
+  --animate-bill-flash: bill-flash 1.2s ease-in-out infinite;
 
   @keyframes fade-in {
     from { opacity: 0; }
@@ -118,6 +119,10 @@
   @keyframes rise-in {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes bill-flash {
+    0%, 100% { box-shadow: 0 0 0 0 rgb(244 63 94 / 0.75); filter: brightness(1); }
+    50% { box-shadow: 0 0 0 10px rgb(244 63 94 / 0); filter: brightness(1.25); }
   }
   @keyframes lm-in {
     from { opacity: 0; transform: translateY(-4px) scale(0.96); }
@@ -561,3 +566,41 @@ html[data-mk-js] [data-reveal]:not([data-shown]) .mk-bar {
     0 2px 8px -4px rgb(12 10 9 / 0.06);
 }
 .mn-scroll { scrollbar-width: thin; scrollbar-color: rgb(120 113 108 / 0.25) transparent; }
+
+/* ─── Kasa ekranı: animasyonlar + 80 mm adisyon fişi ─────────────────────────── */
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0); }
+  20% { transform: rotate(-14deg); }
+  40% { transform: rotate(12deg); }
+  60% { transform: rotate(-8deg); }
+  80% { transform: rotate(5deg); }
+}
+@keyframes sheet-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.mn-receipt { display: none; }
+@media print {
+  @page { size: 80mm auto; margin: 0; }
+  body * { visibility: hidden !important; }
+  .mn-receipt, .mn-receipt * { visibility: visible !important; }
+  .mn-receipt {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 72mm;
+    padding: 3mm 4mm 6mm;
+    background: #fff;
+    color: #000;
+    font: 12px/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  .mn-receipt p { margin: 0; }
+  .mn-receipt hr { border: 0; border-top: 1px dashed #000; margin: 2mm 0; }
+  .mn-r-center { text-align: center; }
+  .mn-r-title { font-size: 15px; font-weight: 700; }
+  .mn-r-row { display: flex; justify-content: space-between; gap: 2mm; }
+  .mn-r-row span:last-child { white-space: nowrap; }
+  .mn-r-detail { padding-left: 4mm; font-size: 11px; }
+  .mn-r-total { font-size: 15px; font-weight: 700; margin-top: 1mm !important; }
+}

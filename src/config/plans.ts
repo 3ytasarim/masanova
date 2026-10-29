@@ -23,6 +23,7 @@ export const FEATURES = [
   "restaurant_payments",
   "voice_ai",
   "business_advisor",
+  "cashier_screen",
 ] as const;
 
 export type Feature = (typeof FEATURES)[number];
@@ -44,6 +45,7 @@ export const FEATURE_LABELS: Record<Feature, string> = {
   restaurant_payments: "Online ödeme ve kasa kaydı",
   voice_ai: "Sesli AI asistan",
   business_advisor: "AI İşletme Danışmanı",
+  cashier_screen: "Kasa ve adisyon ekranı",
 };
 
 const STARTER: readonly Feature[] = ["qr_menu", "tables", "qr_labels", "branding"];
@@ -62,7 +64,7 @@ const PRO: readonly Feature[] = [
   "promotions",
   "restaurant_payments",
 ];
-const AI: readonly Feature[] = [...PRO, "voice_ai", "business_advisor"];
+const AI: readonly Feature[] = [...PRO, "voice_ai", "business_advisor", "cashier_screen"];
 
 /**
  * Limit anahtarları. `null` = sınırsız. Aylık AI limitleri abonelik dönemine (yoksa takvim ayına, UTC) göre sayılır.

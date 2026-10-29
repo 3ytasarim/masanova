@@ -7,6 +7,7 @@ import type { RequestMeta } from "@/lib/security/request-meta";
 import {
   deleteSessionById,
   deleteSessionByTokenHash,
+  extendSession,
   findSessionWithUser,
   insertSession,
   touchSession,
@@ -96,3 +97,21 @@ export const getCurrentSession = cache(async (): Promise<CurrentSession | null> 
 });
 
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => (await getCurrentSession())?.user ?? null);
+
+/**
+ * Kasa terminali gibi sürekli açık ekranlar için kayan oturum: geçerli (süresi dolmamış, kullanıcısı aktif) oturumun
+ * bitişi şimdiden itibaren 7 güne uzatılır, çerez de yenilenir. Ekran kullanıldıkça oturum kapanmaz; 7 gün hiç
+ * açılmazsa normal şekilde düşer. Destek modundaki Super Admin oturumu uzatılmaz.
+ * Yalnızca Route Handler / Server Action içinden çağrılabilir (çerez yazar).
+ */
+export async function extendCurrentSession(): Promise<boolean> {
+  const jar = await cookies();
+  const token = jar.get(SESSION_COOKIE)?.value;
+  if (!token || token.length > 128) return false;
+  const session = await findSessionWithUser(hashToken(token));
+  if (!session || session.expiresAt.getTime() <= Date.now() || !session.user.active || session.user.role === "SUPER_ADMIN") return false;
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  await extendSession(session.id, expiresAt);
+  jar.set(SESSION_COOKIE, token, { httpOnly: true, secure: isProduction, sameSite: "lax", path: "/", expires: expiresAt });
+  return true;
+}

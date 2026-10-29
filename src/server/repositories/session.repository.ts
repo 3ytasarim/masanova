@@ -55,3 +55,7 @@ export function setSessionSupportTenant(id: string, tenantId: string | null) {
     select: { id: true },
   });
 }
+
+export function extendSession(id: string, expiresAt: Date) {
+  return prisma.session.update({ where: { id }, data: { expiresAt, lastSeenAt: new Date() }, select: { id: true } });
+}

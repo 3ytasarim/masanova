@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ArrowRight, ChefHat, Mic, QrCode } from "lucide-react";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { logoutAction } from "@/server/actions/auth.actions";
 import { BrandLogo } from "@/components/layout/logo";
@@ -28,10 +29,13 @@ const HIGHLIGHTS = [
  * Giriş: masaüstünde solda hareketli restoran sahnesi + sağda açık cam kart; mobilde sahne arka plan, kart önde.
  * Form alanları ve davranış değişmedi (aynı loginAction, #email / #password).
  */
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ durum?: string | string[] }> }) {
-  const { durum } = await searchParams;
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ durum?: string | string[]; sonra?: string | string[] }> }) {
+  const { durum, sonra } = await searchParams;
+  const toCashier = sonra === "kasa";
   const statusMessage = typeof durum === "string" ? STATUS_MESSAGES[durum] : undefined;
   const user = await getCurrentUser();
+  // Kasa terminali: oturum zaten açıksa doğrudan kasaya.
+  if (toCashier && user && user.role !== "SUPER_ADMIN") redirect("/kasa");
 
   return (
     <main className="relative grid min-h-dvh bg-[#faf7f4] lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
@@ -69,8 +73,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             <BrandLogo className="h-10" priority />
           </Link>
 
-          <h1 className="text-center text-[1.75rem] font-semibold leading-tight tracking-tight text-stone-900">Tekrar hoş geldiniz</h1>
-          <p className="mt-1.5 text-center text-[0.9375rem] text-stone-500">Restoran paneli ve platform yönetimi için giriş yapın.</p>
+          <h1 className="text-center text-[1.75rem] font-semibold leading-tight tracking-tight text-stone-900">{toCashier ? "Kasa girişi" : "Tekrar hoş geldiniz"}</h1>
+          <p className="mt-1.5 text-center text-[0.9375rem] text-stone-500">{toCashier ? "Kasa ekranı için kullanıcı adınız ve parolanızla giriş yapın. Bu cihazda açık kalır." : "Restoran paneli ve platform yönetimi için giriş yapın."}</p>
 
           {statusMessage ? (
             <p role="status" className="mt-6 rounded-xl border border-warning/25 bg-warning-soft px-3.5 py-3 text-sm text-warning">
@@ -95,7 +99,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
               </div>
             </div>
           ) : (
-            <LoginForm />
+            <LoginForm next={toCashier ? "kasa" : undefined} />
           )}
 
           <p className="mt-8 text-center text-xs text-stone-400">

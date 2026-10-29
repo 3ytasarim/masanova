@@ -38,7 +38,15 @@ export async function loginAction(_prev: LoginFormState, formData: FormData): Pr
     return { error: ERROR_MESSAGES[result.error], email: parsed.data.email };
   }
 
-  redirect(result.redirectTo);
+  // Kasa terminali (/giris?sonra=kasa): işletme kullanıcısı doğrudan kasa ekranına döner. Yalnızca bu sabit hedef
+  // (açık yönlendirme yok); yetki /kasa sayfasında ayrıca denetlenir.
+  redirect(formData.get("sonra") === "kasa" && result.redirectTo === "/panel" ? "/kasa" : result.redirectTo);
+}
+
+/** Kasa terminalinden çıkış: yeniden kasa girişine döner. */
+export async function cashierLogoutAction(): Promise<void> {
+  await logout();
+  redirect("/giris?sonra=kasa");
 }
 
 export async function logoutAction(): Promise<void> {

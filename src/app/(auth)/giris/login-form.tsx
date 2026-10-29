@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 const initialState: LoginFormState = {};
 const INPUT = "h-12 rounded-xl border-stone-200 bg-white/90 pl-11 text-[0.9375rem] shadow-[inset_0_1px_2px_rgb(12_10_9/0.04)] focus-visible:border-orange-400 focus-visible:ring-orange-400/30";
 
-export function LoginForm() {
+export function LoginForm({ next }: { next?: "kasa" } = {}) {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
   const [show, setShow] = useState(false);
   const emailError = state.fieldErrors?.email;
@@ -18,6 +18,7 @@ export function LoginForm() {
 
   return (
     <form action={formAction} noValidate className="mt-8 grid gap-5">
+      {next ? <input type="hidden" name="sonra" value={next} /> : null}
       {state.error ? (
         <p role="alert" className="rounded-xl border border-danger/20 bg-danger-soft px-3.5 py-3 text-sm text-danger">
           {state.error}
